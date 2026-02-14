@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  storas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: storas:dev
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./configs/config.container.http.yaml:/etc/storas/config.yaml:ro
+      - ./configs/authorization.yaml:/etc/storas/authorization.yaml:ro
+      - storas-data:/var/lib/storas/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  storas-selfsigned:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: storas:dev
+    ports:
+      - "9443:9000"
+    volumes:
+      - ./configs/config.selfsigned.yaml:/etc/storas/config.yaml:ro
+      - ./configs/authorization.yaml:/etc/storas/authorization.yaml:ro
+      - storas-data:/var/lib/storas/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-qO-", "https://127.0.0.1:9000/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    profiles: ["selfsigned"]
+
+  storas-acme:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: storas:dev
+    ports:
+      - "9444:9000"
+    volumes:
+      - ./configs/config.acme.yaml:/etc/storas/config.yaml:ro
+      - ./configs/authorization.yaml:/etc/storas/authorization.yaml:ro
+      - storas-data:/var/lib/storas/data
+    environment:
+      STORAS_ACME_API_TOKEN: ${STORAS_ACME_API_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-qO-", "https://127.0.0.1:9000/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    profiles: ["acme"]
+
+volumes:
+  storas-data: {}

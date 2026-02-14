@@ -1,0 +1,54 @@
+server:
+  listen_address: "0.0.0.0:9000"
+  region: "us-west-1"
+  log_format: "text"
+  max_body_bytes: 26843545600
+  max_header_bytes: 1048576
+  trust_proxy_headers: false
+
+storage:
+  data_dir: "./data"
+  multipart_maintenance:
+    enabled: true
+    startup_sweep: true
+    sweep_interval_seconds: 300
+    stale_after_seconds: 86400
+    max_removals_per_sweep: 0
+    remove_corrupt_uploads: true
+    cleanup_temporary_files: true
+    temp_file_stale_after_seconds: 3600
+  lifecycle_maintenance:
+    enabled: true
+    startup_sweep: true
+    sweep_interval_seconds: 300
+    max_actions_per_sweep: 1000
+    dry_run: false
+
+auth:
+  authorization_file: "./configs/authorization.yaml"
+
+tls:
+  enabled: false
+  mode: "self_signed"
+  cert_file: ""
+  key_file: ""
+
+  self_signed:
+    common_name: "localhost"
+    valid_days: 365
+
+  acme_dns:
+    email: ""
+    directory_url: "https://acme-v02.api.letsencrypt.org/directory"
+    provider: "cloudflare"
+    domain: ""
+    propagation_timeout_seconds: 120
+    renew_before_seconds: 2592000
+    resolvers: []
+    credentials:
+      env_prefix: "STORAS_ACME_"
+
+health:
+  enabled: true
+  path_live: "/healthz"
+  path_ready: "/readyz"

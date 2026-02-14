@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  lint-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test update guard
+        shell: bash
+        run: |
+          base_sha=""
+          head_sha=""
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+          elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+          fi
+          ./scripts/ci-check-test-updates.sh "${base_sha}" "${head_sha}"
+
+      - name: Lint
+        run: make lint
+
+      - name: Build
+        run: make build
+
+      - name: Unit Tests
+        run: make test
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: lint-build-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Integration Tests
+        run: make test-integration
+
+  compat-aws-sdk:
+    runs-on: ubuntu-latest
+    needs: lint-build-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: AWS SDK Compatibility Tests
+        run: make test-compat-aws
+
+  compat-rclone:
+    runs-on: ubuntu-latest
+    needs: lint-build-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
+
+      - name: rclone Version
+        run: rclone version
+
+      - name: rclone Compatibility Tests
+        run: make test-compat-rclone
