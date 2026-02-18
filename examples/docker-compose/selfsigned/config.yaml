@@ -1,0 +1,43 @@
+server:
+  listen_address: "0.0.0.0:9000"
+  region: "us-west-1"
+  log_format: "text"
+  max_body_bytes: 26843545600
+  max_header_bytes: 1048576
+  trust_proxy_headers: false
+
+storage:
+  data_dir: "/var/lib/storas/data"
+  lifecycle_maintenance:
+    enabled: true
+    startup_sweep: true
+    sweep_interval_seconds: 300
+    max_actions_per_sweep: 1000
+    dry_run: false
+
+auth:
+  authorization_file: "/etc/storas/authorization.yaml"
+
+tls:
+  enabled: true
+  mode: "self_signed"
+  cert_file: ""
+  key_file: ""
+  self_signed:
+    common_name: "localhost"
+    valid_days: 365
+  acme_dns:
+    email: ""
+    directory_url: "https://acme-v02.api.letsencrypt.org/directory"
+    provider: "cloudflare"
+    domain: ""
+    propagation_timeout_seconds: 120
+    renew_before_seconds: 2592000
+    resolvers: []
+    credentials:
+      env_prefix: "STORAS_ACME_"
+
+health:
+  enabled: true
+  path_live: "/healthz"
+  path_ready: "/readyz"
