@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  storas:
+    image: ${STORAS_IMAGE:?set STORAS_IMAGE to ghcr.io/<github-owner>/storas:<tag>}
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./config.yaml:/etc/storas/config.yaml:ro
+      - ./authorization.yaml:/etc/storas/authorization.yaml:ro
+      - storas-data:/var/lib/storas/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  storas-data: {}

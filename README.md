@@ -25,32 +25,36 @@ Service endpoint defaults to `http://127.0.0.1:9000` with health endpoints:
 - `GET /healthz`
 - `GET /readyz`
 
-## Container run
+## Quick start (container image from GHCR)
 
-Build image:
+`storas` container images are published to GitHub Container Registry using:
 
-```bash
-make build-container
-```
+`ghcr.io/<github-owner>/storas:<tag>`
 
-Run with compose:
+Example:
 
 ```bash
-docker compose up --build
+export STORAS_IMAGE=ghcr.io/<github-owner>/storas:v0.1.0
+docker run --rm -p 9000:9000 \
+  -v "$(pwd)/configs/config.container.http.yaml:/etc/storas/config.yaml:ro" \
+  -v "$(pwd)/configs/authorization.yaml:/etc/storas/authorization.yaml:ro" \
+  -v storas-data:/var/lib/storas/data \
+  "${STORAS_IMAGE}"
 ```
 
-The default compose target starts HTTP on `:9000`. Optional TLS variants use
-profiles:
+Health checks:
 
-```bash
-docker compose --profile selfsigned up --build
-docker compose --profile acme up --build
-```
+- `GET http://127.0.0.1:9000/healthz`
+- `GET http://127.0.0.1:9000/readyz`
 
-Compose examples for HTTP, self-signed TLS, and ACME DNS are documented in
-`docker-compose.yml` and `configs/`.
-ACME mode requires `STORAS_ACME_API_TOKEN` and persists certificate state under
-`${storage.data_dir}/system/acme/<domain>/`.
+Compose examples that run published GHCR images:
+
+- `examples/docker-compose/http/`
+- `examples/docker-compose/selfsigned/`
+- `examples/docker-compose/acme-dns/`
+
+Each stack folder includes its own mini README and ready-to-run `docker-compose.yml`.
+For local image builds from source, keep using `make build-container` and the root `docker-compose.yml`.
 
 ## Test commands
 
