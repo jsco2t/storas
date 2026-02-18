@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-18
+
+### Added
+
+- `examples/docker-compose/`
+  - Added ready-to-run Docker Compose stack examples for HTTP, self-signed TLS, and ACME DNS deployments, including per-stack mini READMEs and environment templates.
+- `README.md`
+  - Added GHCR-based container quick-start documentation and links to containerized deployment examples.
+
+### Changed
+
+- `.github/workflows/ci.yml`
+  - Added GitHub Container Registry image publish workflow support using `ghcr.io/<owner>/storas:<tag>` naming.
+
 ## [0.1.0] - 2026-02-17
 
 ### Added
@@ -33,5 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enforced SigV4-signed request authentication and policy-aware authorization across protected S3 routes.
 - Added TLS operation modes (self-signed, manual certs, ACME DNS) and runtime security checks for safer deployment defaults.
 
-[Unreleased]: https://github.com/jsco2t/storas/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jsco2t/storas/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/jsco2t/storas/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jsco2t/storas/releases/tag/v0.1.0
