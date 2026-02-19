@@ -2,6 +2,14 @@
 
 `stòras` is a single-node, filesystem-backed object store with an S3-compatible API.
 
+## Project status and production use
+
+`stòras` is a home-lab and development-focused project. It is not intended to be
+a production replacement for Amazon S3.
+
+If you run `stòras`, treat the checked-in configs and credentials as examples
+only and replace them for your environment.
+
 ## Why The Name
 
 `stòras` is a Scottish Gaelic word with meanings including store, treasure,

@@ -1,5 +1,8 @@
 # Supported S3 API Scope
 
+This project is for home-lab and development use and is not intended to be a
+production replacement for Amazon S3.
+
 ## Implemented operations
 
 - `ListBuckets`
