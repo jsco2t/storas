@@ -2,6 +2,13 @@
 
 `stòras` is a single-node, filesystem-backed object store with an S3-compatible API.
 
+## Why The Name
+
+`stòras` is a Scottish Gaelic word with meanings including store, treasure, and resource.
+The project uses `stòras` as the product name and `storas` for technical identifiers
+such as the Go module path, binary name, and container paths.Pronunciation (Scottish
+Gaelic): `/ˈst̪ɔːrəs/` (roughly "STOR-uhs").
+
 ## Project status and production use
 
 `stòras` is a home-lab and development-focused project. It is not intended to be
@@ -9,14 +16,6 @@ a production replacement for Amazon S3.
 
 If you run `stòras`, treat the checked-in configs and credentials as examples
 only and replace them for your environment.
-
-## Why The Name
-
-`stòras` is a Scottish Gaelic word with meanings including store, treasure,
-wealth, and resource. The project uses `stòras` as the product name and
-`storas` for technical identifiers such as the Go module path, binary name, and
-container paths.
-Pronunciation (Scottish Gaelic): `/ˈst̪ɔːrəs/` (roughly "STOR-uhs").
 
 ## Quick start (local)
 
@@ -151,3 +150,9 @@ For local image builds from source, keep using `make build-container` and the ro
 - Compatibility suites and `rclone` config: `docs/compatibility-testing.md`
 - Stress and concurrency suites: `docs/stress-testing.md`
 - Operational resiliency runbook: `docs/operational-resiliency.md`
+
+---
+
+## AI Tooling Notice
+
+This repository, should it matter to you, was developed with the assistance of AI.
