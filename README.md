@@ -6,9 +6,9 @@
 
 `stòras` is a Scottish Gaelic word with meanings including store, treasure, and resource.
 The project uses `stòras` as the product name and `storas` for technical identifiers
-such as the Go module path, binary name, and container paths. 
+such as the Go module path, binary name, and container paths.
 
-`stòras` pronunciation: (Scottish Gaelic): `/ˈst̪ɔːrəs/` (roughly "STOR-uhs").
+`stòras` pronunciation (Scottish Gaelic): `/ˈst̪ɔːrəs/` (roughly "STOR-uhs").
 
 ## Project status and production use
 
