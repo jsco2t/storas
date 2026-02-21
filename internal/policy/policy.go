@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1153,20 +1152,31 @@ func matchesAny(patterns []string, value string) bool {
 	return false
 }
 
+// wildcardMatch reports whether value matches pattern, where '*' matches any
+// sequence of characters and '?' matches exactly one character.
+// It uses an iterative approach with no allocations.
 func wildcardMatch(pattern string, value string) bool {
-	var b strings.Builder
-	b.Grow(len(pattern) + 4)
-	b.WriteString("^")
-	for _, ch := range pattern {
-		switch ch {
-		case '*':
-			b.WriteString(".*")
-		case '?':
-			b.WriteString(".")
-		default:
-			b.WriteString(regexp.QuoteMeta(string(ch)))
+	p, v := 0, 0
+	starIdx := -1
+	match := 0
+	for v < len(value) {
+		if p < len(pattern) && (pattern[p] == '?' || pattern[p] == value[v]) {
+			p++
+			v++
+		} else if p < len(pattern) && pattern[p] == '*' {
+			starIdx = p
+			match = v
+			p++
+		} else if starIdx != -1 {
+			p = starIdx + 1
+			match++
+			v = match
+		} else {
+			return false
 		}
 	}
-	b.WriteString("$")
-	return regexp.MustCompile(b.String()).MatchString(value)
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
 }

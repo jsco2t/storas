@@ -56,6 +56,12 @@ func main() {
 		logger.Error("startup failed: storage backend", "error", err)
 		os.Exit(1)
 	}
+	tmpDir := cfg.Storage.DataDir + "/tmp"
+	if err := os.MkdirAll(tmpDir, 0o750); err != nil {
+		logger.Error("startup failed: create temp dir", "error", err)
+		os.Exit(1)
+	}
+
 	stopMultipartMaintenance := runMultipartMaintenance(context.Background(), logger, backend, cfg)
 	stopLifecycleMaintenance := runLifecycleMaintenance(context.Background(), logger, backend, cfg)
 
@@ -83,6 +89,7 @@ func main() {
 		Now:               time.Now,
 		Logger:            logger,
 		TrustProxyHeaders: cfg.Server.TrustProxyHeaders,
+		TempDir:           tmpDir,
 	}
 
 	handler := withServerHeader(svc.Handler())
@@ -286,7 +293,8 @@ func logLifecycleSweep(logger *slog.Logger, msg string, res storage.LifecycleMai
 	}
 	for _, rr := range res.RuleResults {
 		levelMsg := msg + " rule result"
-		fields := append(base[:0:0],
+		fields := make([]any, 0, 12)
+		fields = append(fields,
 			"bucket", rr.Bucket,
 			"rule_id", rr.RuleID,
 			"action", rr.Action,

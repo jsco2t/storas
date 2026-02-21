@@ -409,7 +409,7 @@ func (b *FSBackend) writeMultipartManifest(bucket, uploadID string, manifest mul
 	if err != nil {
 		return fmt.Errorf("marshal multipart manifest: %w", err)
 	}
-	if err := os.WriteFile(b.multipartManifestPath(bucket, uploadID), bytes, 0o600); err != nil {
+	if err := writeFileAtomic(b.multipartManifestPath(bucket, uploadID), bytes, 0o600); err != nil {
 		return fmt.Errorf("write multipart manifest: %w", err)
 	}
 	return nil
@@ -420,7 +420,7 @@ func (b *FSBackend) writeMultipartPartMeta(bucket, uploadID string, meta multipa
 	if err != nil {
 		return fmt.Errorf("marshal multipart part meta: %w", err)
 	}
-	if err := os.WriteFile(b.multipartPartMetaPath(bucket, uploadID, meta.PartNumber), bytes, 0o600); err != nil {
+	if err := writeFileAtomic(b.multipartPartMetaPath(bucket, uploadID, meta.PartNumber), bytes, 0o600); err != nil {
 		return fmt.Errorf("write multipart part meta: %w", err)
 	}
 	return nil

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/md5"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"storas/internal/authz"
@@ -40,6 +42,12 @@ type Service struct {
 	Now               func() time.Time
 	Logger            *slog.Logger
 	TrustProxyHeaders bool
+	// TempDir is the directory used for temporary files (streaming payloads,
+	// Content-MD5 buffers). When empty, the OS default temp directory is used.
+	TempDir string
+
+	policyCache   map[string]policy.Document
+	policyCacheMu sync.RWMutex
 }
 
 type requestContext struct {
@@ -210,6 +218,19 @@ func (s *statusWriter) WriteHeader(code int) {
 
 func (s *statusWriter) Write(p []byte) (int, error) {
 	return s.ResponseWriter.Write(p)
+}
+
+func (s *statusWriter) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *statusWriter) ReadFrom(r io.Reader) (int64, error) {
+	if rf, ok := s.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(s.ResponseWriter, r)
 }
 
 func (s *Service) authenticate(r *http.Request, now time.Time, serviceName string) (authz.Principal, sigv4.RequestAuth, []byte, error) {
@@ -537,9 +558,13 @@ func (s *Service) handlePutBucketVersioning(w http.ResponseWriter, r *http.Reque
 			return storage.ErrInvalidRequest
 		}
 	}
-	status := storage.BucketVersioningOff
+	var status storage.BucketVersioningStatus
 	switch strings.TrimSpace(req.Status) {
-	case "", string(storage.BucketVersioningOff):
+	case "":
+		// No <Status> element — S3 treats this as a no-op.
+		w.WriteHeader(http.StatusOK)
+		return nil
+	case string(storage.BucketVersioningOff):
 		status = storage.BucketVersioningSuspended
 	case string(storage.BucketVersioningEnabled):
 		status = storage.BucketVersioningEnabled
@@ -589,6 +614,7 @@ func (s *Service) handlePutBucketPolicy(w http.ResponseWriter, r *http.Request, 
 	if err := s.Backend.PutBucketPolicy(r.Context(), bucket, body); err != nil {
 		return err
 	}
+	s.invalidatePolicyCache(bucket)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -597,6 +623,7 @@ func (s *Service) handleDeleteBucketPolicy(w http.ResponseWriter, r *http.Reques
 	if err := s.Backend.DeleteBucketPolicy(r.Context(), bucket); err != nil {
 		return err
 	}
+	s.invalidatePolicyCache(bucket)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -1070,7 +1097,7 @@ func (s *Service) handlePutObject(w http.ResponseWriter, r *http.Request, target
 	if err != nil {
 		return err
 	}
-	body, cleanup, err := bodyReaderForContentMD5(r, r.Body)
+	body, cleanup, err := s.bodyReaderForContentMD5(r, r.Body)
 	if err != nil {
 		return err
 	}
@@ -1434,7 +1461,7 @@ func (s *Service) handleUploadPart(w http.ResponseWriter, r *http.Request, targe
 	if err != nil || partNumber <= 0 {
 		return storage.ErrInvalidRequest
 	}
-	body, cleanup, err := bodyReaderForContentMD5(r, r.Body)
+	body, cleanup, err := s.bodyReaderForContentMD5(r, r.Body)
 	if err != nil {
 		return err
 	}
@@ -1936,15 +1963,11 @@ func shouldApplyBucketPolicy(op s3.Operation) bool {
 }
 
 func (s *Service) isAllowedByBucketPolicy(ctx context.Context, bucket string, principal authz.Principal, action string, resource string, evalCtx policy.EvaluationContext) (bool, error) {
-	raw, err := s.Backend.GetBucketPolicy(ctx, bucket)
+	doc, err := s.getBucketPolicyDoc(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, storage.ErrNoSuchBucketPolicy) {
 			return true, nil
 		}
-		return false, err
-	}
-	doc, err := policy.ParseAndValidate(raw, bucket)
-	if err != nil {
 		return false, err
 	}
 	decision := policy.Evaluate(doc, policyPrincipalCandidates(principal, evalCtx), action, resource, evalCtx)
@@ -1966,6 +1989,44 @@ func (s *Service) isAllowedByBucketPolicy(ctx context.Context, bucket string, pr
 		return false, nil
 	}
 	return decision.Allowed, nil
+}
+
+// getBucketPolicyDoc returns the parsed policy.Document for the given bucket,
+// using an in-memory cache to avoid repeated filesystem reads and JSON parsing.
+// The cache is invalidated by handlePutBucketPolicy and handleDeleteBucketPolicy.
+func (s *Service) getBucketPolicyDoc(ctx context.Context, bucket string) (policy.Document, error) {
+	s.policyCacheMu.RLock()
+	if s.policyCache != nil {
+		if doc, ok := s.policyCache[bucket]; ok {
+			s.policyCacheMu.RUnlock()
+			return doc, nil
+		}
+	}
+	s.policyCacheMu.RUnlock()
+
+	raw, err := s.Backend.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		return policy.Document{}, err
+	}
+	doc, err := policy.ParseAndValidate(raw, bucket)
+	if err != nil {
+		return policy.Document{}, err
+	}
+
+	s.policyCacheMu.Lock()
+	if s.policyCache == nil {
+		s.policyCache = make(map[string]policy.Document)
+	}
+	s.policyCache[bucket] = doc
+	s.policyCacheMu.Unlock()
+	return doc, nil
+}
+
+// invalidatePolicyCache removes the cached policy document for the given bucket.
+func (s *Service) invalidatePolicyCache(bucket string) {
+	s.policyCacheMu.Lock()
+	delete(s.policyCache, bucket)
+	s.policyCacheMu.Unlock()
 }
 
 func policyPrincipalCandidates(principal authz.Principal, evalCtx policy.EvaluationContext) []string {
@@ -2199,7 +2260,7 @@ func validateACLCompatibilityHeaders(h http.Header, op s3.Operation) error {
 	}
 }
 
-func bodyReaderForContentMD5(r *http.Request, src io.Reader) (io.Reader, func(), error) {
+func (s *Service) bodyReaderForContentMD5(r *http.Request, src io.Reader) (io.Reader, func(), error) {
 	if info, ok := requestContextFrom(r.Context()); ok && info.Auth != nil && sigv4.IsStreamingPayload(info.Auth.PayloadHash) {
 		expectedDecodedLength := int64(-1)
 		if raw := strings.TrimSpace(r.Header.Get("X-Amz-Decoded-Content-Length")); raw != "" {
@@ -2209,17 +2270,17 @@ func bodyReaderForContentMD5(r *http.Request, src io.Reader) (io.Reader, func(),
 			}
 			expectedDecodedLength = parsed
 		}
-		decoded, cleanup, err := sigv4.DecodeStreamingPayload(r.Context(), src, *info.Auth, info.SigningKey, expectedDecodedLength)
+		decoded, cleanup, err := sigv4.DecodeStreamingPayload(r.Context(), src, *info.Auth, info.SigningKey, expectedDecodedLength, s.TempDir)
 		if err != nil {
 			return nil, nil, err
 		}
 		src = decoded
-		return bodyReaderForContentMD5WithCleanup(r, src, cleanup)
+		return s.bodyReaderForContentMD5WithCleanup(r, src, cleanup)
 	}
-	return bodyReaderForContentMD5WithCleanup(r, src, nil)
+	return s.bodyReaderForContentMD5WithCleanup(r, src, nil)
 }
 
-func bodyReaderForContentMD5WithCleanup(r *http.Request, src io.Reader, priorCleanup func()) (io.Reader, func(), error) {
+func (s *Service) bodyReaderForContentMD5WithCleanup(r *http.Request, src io.Reader, priorCleanup func()) (io.Reader, func(), error) {
 	baseCleanup := func() {}
 	if priorCleanup != nil {
 		baseCleanup = priorCleanup
@@ -2234,7 +2295,7 @@ func bodyReaderForContentMD5WithCleanup(r *http.Request, src io.Reader, priorCle
 		return nil, nil, storage.ErrInvalidRequest
 	}
 
-	temp, err := os.CreateTemp("", "storas-md5-*")
+	temp, err := os.CreateTemp(s.TempDir, "storas-md5-*")
 	if err != nil {
 		baseCleanup()
 		return nil, nil, err
@@ -2249,7 +2310,7 @@ func bodyReaderForContentMD5WithCleanup(r *http.Request, src io.Reader, priorCle
 		cleanup()
 		return nil, nil, err
 	}
-	if !equalBytes(expected, hasher.Sum(nil)) {
+	if subtle.ConstantTimeCompare(expected, hasher.Sum(nil)) != 1 {
 		cleanup()
 		return nil, nil, storage.ErrBadDigest
 	}
@@ -2258,18 +2319,6 @@ func bodyReaderForContentMD5WithCleanup(r *http.Request, src io.Reader, priorCle
 		return nil, nil, err
 	}
 	return temp, cleanup, nil
-}
-
-func equalBytes(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func isRequestBodyTooLarge(err error) bool {

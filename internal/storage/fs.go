@@ -10,13 +10,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"storas/internal/s3"
 )
 
 const (
@@ -68,9 +70,11 @@ func (b *FSBackend) CreateBucket(ctx context.Context, bucket string) error {
 	if err := ensureContext(ctx); err != nil {
 		return err
 	}
-	if !isValidBucketName(bucket) {
+	if !s3.IsValidBucketName(bucket) {
 		return ErrInvalidBucketName
 	}
+	b.mutationMu.Lock()
+	defer b.mutationMu.Unlock()
 	bucketDir := b.bucketDir(bucket)
 	if _, err := os.Stat(bucketDir); err == nil {
 		return ErrBucketExists
@@ -86,7 +90,7 @@ func (b *FSBackend) CreateBucket(ctx context.Context, bucket string) error {
 	if err != nil {
 		return fmt.Errorf("marshal bucket metadata: %w", err)
 	}
-	if err := os.WriteFile(b.bucketMetaPath(bucket), bytes, 0o644); err != nil {
+	if err := writeFileAtomic(b.bucketMetaPath(bucket), bytes, 0o644); err != nil {
 		return fmt.Errorf("write bucket metadata: %w", err)
 	}
 	return nil
@@ -108,6 +112,15 @@ func (b *FSBackend) DeleteBucket(ctx context.Context, bucket string) error {
 		return ErrBucketNotEmpty
 	}
 
+	multipartDir := filepath.Join(b.bucketDir(bucket), "multipart")
+	mpEntries, err := os.ReadDir(multipartDir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read bucket multipart dir: %w", err)
+	}
+	if len(mpEntries) > 0 {
+		return ErrBucketNotEmpty
+	}
+
 	if err := os.RemoveAll(b.bucketDir(bucket)); err != nil {
 		return fmt.Errorf("delete bucket: %w", err)
 	}
@@ -118,7 +131,7 @@ func (b *FSBackend) HeadBucket(ctx context.Context, bucket string) error {
 	if err := ensureContext(ctx); err != nil {
 		return err
 	}
-	if !isValidBucketName(bucket) {
+	if !s3.IsValidBucketName(bucket) {
 		return ErrInvalidBucketName
 	}
 	info, err := os.Stat(b.bucketDir(bucket))
@@ -357,7 +370,12 @@ func (b *FSBackend) PutObject(ctx context.Context, bucket, key string, body io.R
 	}
 	b.mutationMu.Lock()
 	defer b.mutationMu.Unlock()
+	return b.putObjectUnderLock(ctx, bucket, key, body, metadata)
+}
 
+// putObjectUnderLock performs the write work for PutObject. Callers must hold
+// b.mutationMu (write lock) before calling this method.
+func (b *FSBackend) putObjectUnderLock(ctx context.Context, bucket, key string, body io.Reader, metadata ObjectMetadata) (ObjectInfo, error) {
 	versioning, err := b.GetBucketVersioning(ctx, bucket)
 	if err != nil {
 		return ObjectInfo{}, err
@@ -399,7 +417,8 @@ func (b *FSBackend) PutObject(ctx context.Context, bucket, key string, body io.R
 	defer func() { _ = os.Remove(tmpPayload.Name()) }()
 
 	h := md5.New() //nolint:gosec // S3 ETag compatibility for single-part objects.
-	written, err := io.Copy(io.MultiWriter(tmpPayload, h), body)
+	limitedBody := io.LimitReader(body, b.maxObjectSize+1)
+	written, err := io.Copy(io.MultiWriter(tmpPayload, h), limitedBody)
 	if err != nil {
 		_ = tmpPayload.Close()
 		return ObjectInfo{}, fmt.Errorf("write payload: %w", err)
@@ -485,7 +504,12 @@ func (b *FSBackend) GetObjectVersion(ctx context.Context, bucket, key, versionID
 	}
 	b.mutationMu.RLock()
 	defer b.mutationMu.RUnlock()
+	return b.getObjectVersionUnlocked(ctx, bucket, key, versionID)
+}
 
+// getObjectVersionUnlocked opens the payload file for the given object version.
+// Callers must hold b.mutationMu (at least read lock) before calling this method.
+func (b *FSBackend) getObjectVersionUnlocked(ctx context.Context, bucket, key, versionID string) (io.ReadCloser, ObjectMetadata, error) {
 	meta, err := b.headObjectVersionUnlocked(ctx, bucket, key, versionID)
 	if err != nil {
 		return nil, ObjectMetadata{}, err
@@ -668,15 +692,29 @@ func (b *FSBackend) CopyObject(ctx context.Context, srcBucket, srcKey, dstBucket
 	if err := ensureContext(ctx); err != nil {
 		return ObjectInfo{}, err
 	}
-	rc, meta, err := b.GetObject(ctx, srcBucket, srcKey)
+	if err := b.HeadBucket(ctx, dstBucket); err != nil {
+		return ObjectInfo{}, err
+	}
+	if dstKey == "" {
+		return ObjectInfo{}, ErrNoSuchKey
+	}
+	// Hold the write lock across both the source read and the destination write
+	// to prevent a concurrent delete of the source between the two operations.
+	b.mutationMu.Lock()
+	defer b.mutationMu.Unlock()
+	rc, srcMeta, err := b.getObjectVersionUnlocked(ctx, srcBucket, srcKey, "")
 	if err != nil {
 		return ObjectInfo{}, err
 	}
 	defer rc.Close()
-	return b.PutObject(ctx, dstBucket, dstKey, rc, meta)
+	return b.putObjectUnderLock(ctx, dstBucket, dstKey, rc, srcMeta)
 }
 
 func (b *FSBackend) ListObjectsV2(ctx context.Context, bucket string, opts ListObjectsOptions) (ListObjectsResult, error) {
+	// NOTE: This implementation loads all object metadata into memory before applying
+	// pagination. This is acceptable for single-node, small-to-medium deployments but
+	// will cause high memory usage and latency for buckets containing millions of objects.
+	// A future improvement would maintain a sorted on-disk index for O(log n) scans.
 	if err := ensureContext(ctx); err != nil {
 		return ListObjectsResult{}, err
 	}
@@ -817,6 +855,10 @@ func (b *FSBackend) ListObjectsV2(ctx context.Context, bucket string, opts ListO
 }
 
 func (b *FSBackend) ListObjectVersions(ctx context.Context, bucket string, opts ListObjectVersionsOptions) (ListObjectVersionsResult, error) {
+	// NOTE: This implementation loads all object version metadata into memory before applying
+	// pagination. This is acceptable for single-node, small-to-medium deployments but
+	// will cause high memory usage and latency for buckets containing millions of objects.
+	// A future improvement would maintain a sorted on-disk index for O(log n) scans.
 	if err := ensureContext(ctx); err != nil {
 		return ListObjectVersionsResult{}, err
 	}
@@ -991,7 +1033,8 @@ func (b *FSBackend) readBucketMetadata(bucket string) (bucketMetadataOnDisk, err
 	meta := bucketMetadataOnDisk{CreationDate: info.ModTime().UTC()}
 	encoded, marshalErr := json.Marshal(meta)
 	if marshalErr == nil {
-		_ = os.WriteFile(path, encoded, 0o644)
+		slog.Warn("bucket.json missing or corrupt; auto-healing from directory mtime", "bucket", bucket, "path", path)
+		_ = writeFileAtomic(path, encoded, 0o644)
 	}
 	return meta, nil
 }
@@ -1001,49 +1044,10 @@ func (b *FSBackend) writeBucketMetadata(bucket string, meta bucketMetadataOnDisk
 	if err != nil {
 		return fmt.Errorf("marshal bucket metadata: %w", err)
 	}
-	if err := os.WriteFile(b.bucketMetaPath(bucket), encoded, 0o644); err != nil {
+	if err := writeFileAtomic(b.bucketMetaPath(bucket), encoded, 0o644); err != nil {
 		return fmt.Errorf("write bucket metadata: %w", err)
 	}
 	return nil
-}
-
-func isValidBucketName(name string) bool {
-	if len(name) < 3 || len(name) > 63 {
-		return false
-	}
-	if strings.Contains(name, "..") || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
-		return false
-	}
-	for _, r := range name {
-		isDigit := r >= '0' && r <= '9'
-		isLower := r >= 'a' && r <= 'z'
-		if !(isDigit || isLower || r == '-' || r == '.') {
-			return false
-		}
-	}
-	if net.ParseIP(name) != nil {
-		return false
-	}
-	labels := strings.Split(name, ".")
-	for _, label := range labels {
-		if label == "" {
-			return false
-		}
-		for i, r := range label {
-			isDigit := r >= '0' && r <= '9'
-			isLower := r >= 'a' && r <= 'z'
-			if !(isDigit || isLower || r == '-') {
-				return false
-			}
-			if (i == 0 || i == len(label)-1) && r == '-' {
-				return false
-			}
-		}
-		if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
-			return false
-		}
-	}
-	return true
 }
 
 func cloneMap(in map[string]string) map[string]string {
