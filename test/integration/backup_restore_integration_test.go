@@ -43,7 +43,7 @@ func TestIntegrationBackupRestoreFromFilesystemSnapshot(t *testing.T) {
 		t.Fatalf("copyDir snapshot error: %v", err)
 	}
 
-	restored, err := storage.NewFSBackend(snapshotDir, 25*1024*1024*1024)
+	restored, err := storage.NewFSBackend(snapshotDir, 25*1024*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend restore error: %v", err)
 	}

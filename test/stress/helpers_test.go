@@ -30,7 +30,7 @@ const (
 func newStressServer(t *testing.T, maxBodyBytes int64) (*httptest.Server, func()) {
 	t.Helper()
 	dir := t.TempDir()
-	backend, err := storage.NewFSBackend(filepath.Join(dir, "data"), 25*1024*1024*1024)
+	backend, err := storage.NewFSBackend(filepath.Join(dir, "data"), 25*1024*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend: %v", err)
 	}

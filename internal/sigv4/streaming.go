@@ -14,7 +14,7 @@ import (
 
 const streamingAlgorithm = "AWS4-HMAC-SHA256-PAYLOAD"
 
-func DecodeStreamingPayload(ctx context.Context, src io.Reader, auth RequestAuth, signingKey []byte, expectedDecodedLength int64) (io.Reader, func(), error) {
+func DecodeStreamingPayload(ctx context.Context, src io.Reader, auth RequestAuth, signingKey []byte, expectedDecodedLength int64, tmpDir string) (io.Reader, func(), error) {
 	if !IsStreamingPayload(auth.PayloadHash) {
 		return src, func() {}, nil
 	}
@@ -22,7 +22,7 @@ func DecodeStreamingPayload(ctx context.Context, src io.Reader, auth RequestAuth
 		return nil, nil, ErrInvalidRequestPayload
 	}
 
-	tmp, err := os.CreateTemp("", "storas-streaming-*")
+	tmp, err := os.CreateTemp(tmpDir, "storas-streaming-*")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -77,6 +77,9 @@ func DecodeStreamingPayload(ctx context.Context, src io.Reader, auth RequestAuth
 		return nil, nil, ErrInvalidRequestPayload
 	}
 
+	// reader.Peek(1) detects unexpected trailing bytes after the final zero-size chunk.
+	// It blocks only until a byte or EOF is available; the HTTP server's read deadline
+	// on the underlying net.Conn prevents indefinite blocking for slow clients.
 	if _, err := reader.Peek(1); err != io.EOF {
 		cleanup()
 		return nil, nil, ErrInvalidRequestPayload

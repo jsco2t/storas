@@ -104,7 +104,7 @@ func (b *FSBackend) UploadPart(ctx context.Context, bucket, key, uploadID string
 	defer func() { _ = os.Remove(tmpPart.Name()) }()
 
 	h := md5.New() //nolint:gosec // S3 multipart ETag behavior is MD5-based per part.
-	written, err := io.Copy(io.MultiWriter(tmpPart, h), body)
+	written, err := io.Copy(io.MultiWriter(tmpPart, h), io.LimitReader(body, b.maxObjectSize+1))
 	if err != nil {
 		_ = tmpPart.Close()
 		return MultipartPartInfo{}, fmt.Errorf("write multipart part: %w", err)
@@ -236,7 +236,7 @@ func (b *FSBackend) ListMultipartUploads(ctx context.Context, bucket string, opt
 	}
 	entries, err := os.ReadDir(b.multipartRoot(bucket))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return MultipartUploadListResult{}, nil
 		}
 		return MultipartUploadListResult{}, fmt.Errorf("read multipart root: %w", err)
@@ -392,7 +392,7 @@ func (b *FSBackend) readMultipartManifest(ctx context.Context, bucket, uploadID 
 	}
 	bytes, err := os.ReadFile(b.multipartManifestPath(bucket, uploadID))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return multipartManifest{}, ErrNoSuchUpload
 		}
 		return multipartManifest{}, fmt.Errorf("read multipart manifest: %w", err)
@@ -409,7 +409,7 @@ func (b *FSBackend) writeMultipartManifest(bucket, uploadID string, manifest mul
 	if err != nil {
 		return fmt.Errorf("marshal multipart manifest: %w", err)
 	}
-	if err := os.WriteFile(b.multipartManifestPath(bucket, uploadID), bytes, 0o600); err != nil {
+	if err := writeFileAtomic(b.multipartManifestPath(bucket, uploadID), bytes, 0o600); err != nil {
 		return fmt.Errorf("write multipart manifest: %w", err)
 	}
 	return nil
@@ -420,7 +420,7 @@ func (b *FSBackend) writeMultipartPartMeta(bucket, uploadID string, meta multipa
 	if err != nil {
 		return fmt.Errorf("marshal multipart part meta: %w", err)
 	}
-	if err := os.WriteFile(b.multipartPartMetaPath(bucket, uploadID, meta.PartNumber), bytes, 0o600); err != nil {
+	if err := writeFileAtomic(b.multipartPartMetaPath(bucket, uploadID, meta.PartNumber), bytes, 0o600); err != nil {
 		return fmt.Errorf("write multipart part meta: %w", err)
 	}
 	return nil
@@ -435,7 +435,7 @@ func (b *FSBackend) listMultipartPartMetas(ctx context.Context, bucket, uploadID
 	}
 	entries, err := os.ReadDir(b.multipartUploadDir(bucket, uploadID))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNoSuchUpload
 		}
 		return nil, fmt.Errorf("read multipart upload dir: %w", err)

@@ -54,7 +54,7 @@ func TestMatchesLifecycleRuleWithSizePredicates(t *testing.T) {
 
 func TestSweepLifecycleExpiresCurrentObjectsWithLimit(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestSweepLifecycleExpiresCurrentObjectsWithLimit(t *testing.T) {
 
 func TestSweepLifecycleExpiresNoncurrentVersions(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSweepLifecycleExpiresNoncurrentVersions(t *testing.T) {
 
 func TestSweepLifecycleAbortsIncompleteMultipartAndSupportsDryRun(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestSweepLifecycleAbortsIncompleteMultipartAndSupportsDryRun(t *testing.T) 
 
 func TestSweepLifecycleTagFilterExpiresOnlyMatchingObjects(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestSweepLifecycleTagFilterExpiresOnlyMatchingObjects(t *testing.T) {
 
 func TestSweepLifecycleTagFilterAbortsMatchingMultipartOnly(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestSweepLifecycleTagFilterAbortsMatchingMultipartOnly(t *testing.T) {
 
 func TestSweepLifecycleAdvancedCombinationFiltersCurrentAndNoncurrent(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestSweepLifecycleAdvancedCombinationFiltersCurrentAndNoncurrent(t *testing
 
 func TestSweepLifecycleExpirationDate(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -316,13 +317,13 @@ func loadStoredCertificate(stateDir string) (*tls.Certificate, *x509.Certificate
 	certPath := filepath.Join(stateDir, tlsCertFileName)
 	keyPath := filepath.Join(stateDir, tlsKeyFileName)
 	if _, err := os.Stat(certPath); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil, nil
 		}
 		return nil, nil, err
 	}
 	if _, err := os.Stat(keyPath); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil, nil
 		}
 		return nil, nil, err

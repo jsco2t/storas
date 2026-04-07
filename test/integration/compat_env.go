@@ -27,7 +27,7 @@ type CompatEnv struct {
 func NewCompatEnv(t *testing.T) *CompatEnv {
 	t.Helper()
 	now := time.Now().UTC()
-	backend, err := storage.NewFSBackend(filepath.Join(t.TempDir(), "data"), 25*1024*1024*1024)
+	backend, err := storage.NewFSBackend(filepath.Join(t.TempDir(), "data"), 25*1024*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

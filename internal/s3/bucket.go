@@ -37,9 +37,6 @@ func IsValidBucketName(name string) bool {
 				return false
 			}
 		}
-		if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
-			return false
-		}
 	}
 	return true
 }

@@ -74,9 +74,9 @@ When active tasks are fully completed, archive detailed history in the completed
 document and keep the active document concise with current context, open gaps,
 and next prioritized work.
 
-## Golden Rule
+## Golden Rules
 
-DO NOT defer work without permission.
+1. DO NOT defer work without permission.
 
 If work is deferred, the only acceptable way to do that is by creating
 (or updating) a task document that clearly defines the scope and
@@ -87,3 +87,5 @@ The following are forbidden:
 - Silent deferral.
 - Deferral based on assumptions without explicit approval.
 - Deferring work via hidden `TODO`/`LATER`/`BUG` style comments in code.
+
+1. DO NOT declare work as complete if the build is failing, linting is failing, or tests are failing.

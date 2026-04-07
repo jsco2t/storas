@@ -29,7 +29,7 @@ func markUploadTreeOld(t *testing.T, uploadDir string, ts time.Time) {
 
 func TestSweepStaleMultipartUploadsRemovesStaleUploads(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSweepStaleMultipartUploadsRemovesStaleUploads(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsRespectsRemovalLimit(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestSweepStaleMultipartUploadsRespectsRemovalLimit(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsRemovesOldestFirstWhenLimited(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestSweepStaleMultipartUploadsRemovesOldestFirstWhenLimited(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsCorruptRetentionPolicy(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestSweepStaleMultipartUploadsCorruptRetentionPolicy(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsHandlesMissingCreatedAtAsCorrupt(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestSweepStaleMultipartUploadsHandlesMissingCreatedAtAsCorrupt(t *testing.T
 
 func TestSweepStaleMultipartUploadsCleansStaleTempFiles(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestSweepStaleMultipartUploadsCleansStaleTempFiles(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsUsesLatestUploadActivity(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestSweepStaleMultipartUploadsUsesLatestUploadActivity(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsRejectsInvalidAge(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestSweepStaleMultipartUploadsRejectsInvalidAge(t *testing.T) {
 
 func TestSweepStaleMultipartUploadsHonorsCanceledContext(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

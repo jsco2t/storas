@@ -66,7 +66,7 @@ func (b *FSBackend) SweepStaleMultipartUploads(ctx context.Context, now time.Tim
 
 		entries, readErr := os.ReadDir(b.multipartRoot(bucket))
 		if readErr != nil {
-			if os.IsNotExist(readErr) {
+			if errors.Is(readErr, os.ErrNotExist) {
 				continue
 			}
 			errs = append(errs, fmt.Errorf("list multipart root for bucket %q: %w", bucket, readErr))
@@ -171,7 +171,7 @@ func assessMultipartUpload(uploadDir string, loadManifest func() (multipartManif
 
 	lastActivity, activityErr := latestUploadActivity(uploadDir)
 	if activityErr != nil {
-		if os.IsNotExist(activityErr) {
+		if errors.Is(activityErr, os.ErrNotExist) {
 			return false, false, time.Time{}, nil
 		}
 		return false, false, time.Time{}, activityErr
@@ -212,7 +212,7 @@ func latestUploadActivity(uploadDir string) (time.Time, error) {
 func cleanupMultipartTempFiles(uploadDir string, now time.Time, staleAfter time.Duration) (int, error) {
 	entries, err := os.ReadDir(filepath.Clean(uploadDir))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return 0, nil
 		}
 		return 0, err
@@ -234,21 +234,11 @@ func cleanupMultipartTempFiles(uploadDir string, now time.Time, staleAfter time.
 		if now.Sub(info.ModTime().UTC()) < staleAfter {
 			continue
 		}
-		if err := os.Remove(filepath.Join(uploadDir, entry.Name())); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(filepath.Join(uploadDir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, err)
 			continue
 		}
 		removed++
 	}
 	return removed, errors.Join(errs...)
-}
-
-func defaultMultipartSweepOptions(staleAfter time.Duration) MultipartSweepOptions {
-	return MultipartSweepOptions{
-		StaleAfter:            staleAfter,
-		MaxRemovals:           0,
-		RemoveCorruptUploads:  true,
-		CleanupTemporaryFiles: true,
-		TempFileStaleAfter:    staleAfter,
-	}
 }
