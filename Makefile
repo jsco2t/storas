@@ -14,7 +14,7 @@ CONFIG_FILE ?= ./configs/config.yaml
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.git/*' -not -path './.cache/*')
 MD_FILES := $(shell find . -type f -name '*.md' -not -path './.git/*' -not -path './.cache/*')
 
-.PHONY: help lint lint-go lint-md build test test-integration test-compat test-compat-aws test-compat-rclone test-stress test-race-concurrency test-restore-integrity ci-check-tests verify mod-tidy run run-config dev clean build-container
+.PHONY: help lint lint-go lint-md build test test-integration test-compat test-compat-aws test-compat-rclone test-stress test-race-concurrency test-restore-integrity ci-check-tests verify mod-tidy run run-config dev clean build-container tag-patch tag-minor tag-major
 
 STRESS_TEST_PACKAGES ?= ./internal/storage ./internal/api ./test/stress
 STRESS_TEST_TAGS ?= stress
@@ -40,6 +40,9 @@ help:
 	@echo "  make dev             - run service with local sample config"
 	@echo "  make build-container - build container image (requires Dockerfile)"
 	@echo "  make clean           - remove local build outputs"
+	@echo "  make tag-patch       - create and tag the next patch release (x.y.Z)"
+	@echo "  make tag-minor       - create and tag the next minor release (x.Y.0)"
+	@echo "  make tag-major       - create and tag the next major release (X.0.0)"
 
 lint: lint-go lint-md
 
@@ -110,6 +113,15 @@ build-container:
 		exit 1; \
 	fi
 	@$(DOCKER) build -t $(IMAGE) .
+
+tag-patch:
+	@python3 scripts/tag-release.py patch
+
+tag-minor:
+	@python3 scripts/tag-release.py minor
+
+tag-major:
+	@python3 scripts/tag-release.py major
 
 clean:
 	@rm -rf $(BIN_DIR)
