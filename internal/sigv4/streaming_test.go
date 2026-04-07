@@ -15,7 +15,7 @@ func TestDecodeStreamingPayloadValidChain(t *testing.T) {
 	auth, key := streamingAuthFixture()
 	body := buildStreamingPayload(auth, key, []string{"hello-", "world"})
 
-	out, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, int64(len("hello-world")))
+	out, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, int64(len("hello-world")), "")
 	if err != nil {
 		t.Fatalf("DecodeStreamingPayload error: %v", err)
 	}
@@ -33,9 +33,20 @@ func TestDecodeStreamingPayloadRejectsInvalidSignature(t *testing.T) {
 	t.Parallel()
 	auth, key := streamingAuthFixture()
 	body := buildStreamingPayload(auth, key, []string{"hello"})
-	body = strings.Replace(body, "a", "b", 1)
+	// Corrupt the first chunk-signature= value by flipping its first hex character.
+	const sigMarker = "chunk-signature="
+	idx := strings.Index(body, sigMarker)
+	if idx < 0 {
+		t.Fatal("chunk-signature marker not found in body")
+	}
+	sigStart := idx + len(sigMarker)
+	if body[sigStart] == '0' {
+		body = body[:sigStart] + "1" + body[sigStart+1:]
+	} else {
+		body = body[:sigStart] + "0" + body[sigStart+1:]
+	}
 
-	if _, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, -1); err == nil {
+	if _, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, -1, ""); err == nil {
 		t.Fatal("expected signature mismatch error")
 	} else {
 		if cleanup != nil {
@@ -50,7 +61,7 @@ func TestDecodeStreamingPayloadRejectsFramingErrors(t *testing.T) {
 	body := buildStreamingPayload(auth, key, []string{"abc"})
 	body = strings.Replace(body, "\r\n", "\n", 1)
 
-	if _, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, -1); err == nil {
+	if _, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, -1, ""); err == nil {
 		t.Fatal("expected framing validation error")
 	} else if cleanup != nil {
 		cleanup()
@@ -61,7 +72,7 @@ func TestDecodeStreamingPayloadHonorsDecodedLength(t *testing.T) {
 	t.Parallel()
 	auth, key := streamingAuthFixture()
 	body := buildStreamingPayload(auth, key, []string{"abc"})
-	if _, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, 10); err == nil {
+	if _, cleanup, err := DecodeStreamingPayload(context.Background(), strings.NewReader(body), auth, key, 10, ""); err == nil {
 		t.Fatal("expected decoded-length mismatch error")
 	} else if cleanup != nil {
 		cleanup()

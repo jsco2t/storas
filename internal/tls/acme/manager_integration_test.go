@@ -135,6 +135,16 @@ func TestNewManagerReusesStoredCertificateOnRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second NewManager error: %v", err)
 	}
+	pair, certErr := mgr2.GetCertificate(nil)
+	if certErr != nil {
+		t.Fatalf("GetCertificate error: %v", certErr)
+	}
+	if pair == nil || pair.Leaf == nil {
+		t.Fatal("expected non-nil certificate leaf after restart")
+	}
+	if pair.Leaf.Subject.CommonName != "storage.example.com" {
+		t.Fatalf("expected CN storage.example.com, got %q", pair.Leaf.Subject.CommonName)
+	}
 	mgr2.Stop()
 
 	if client.newOrderCalls != 0 {

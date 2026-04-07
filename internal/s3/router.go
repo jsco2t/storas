@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"storas/internal/config"
 )
 
 type contextKey string
@@ -25,11 +27,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux := http.NewServeMux()
 	livePath := cfg.PathLive
 	if livePath == "" {
-		livePath = "/healthz"
+		livePath = config.DefaultHealthLive
 	}
 	readyPath := cfg.PathReady
 	if readyPath == "" {
-		readyPath = "/readyz"
+		readyPath = config.DefaultHealthReady
 	}
 
 	mux.HandleFunc(livePath, func(w http.ResponseWriter, r *http.Request) {

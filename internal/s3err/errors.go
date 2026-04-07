@@ -70,6 +70,9 @@ func Write(w http.ResponseWriter, requestID string, apiErr APIError, resource st
 	})
 }
 
+// ErrInvalidPartNumber is returned when a part number is outside the valid S3 range.
+var ErrInvalidPartNumber = errors.New("invalid partNumber")
+
 func MapError(err error) APIError {
 	var apiErr APIError
 	var maxBytesErr *http.MaxBytesError
@@ -124,7 +127,7 @@ func MapError(err error) APIError {
 		return SignatureDoesNotMatch
 	case errors.Is(err, s3.ErrInvalidRequestPath):
 		return InvalidBucketName
-	case err.Error() == "invalid partNumber":
+	case errors.Is(err, ErrInvalidPartNumber):
 		return InvalidRequest
 	default:
 		return InternalError

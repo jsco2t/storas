@@ -577,7 +577,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	t.Helper()
 	now := time.Date(2026, 2, 13, 10, 0, 0, 0, time.UTC)
 	dataRoot := filepath.Join(t.TempDir(), "data")
-	backend, err := storage.NewFSBackend(dataRoot, 25*1024*1024*1024)
+	backend, err := storage.NewFSBackend(dataRoot, 25*1024*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

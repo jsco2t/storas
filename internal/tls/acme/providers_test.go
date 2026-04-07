@@ -7,6 +7,7 @@ import (
 )
 
 func TestLookupProviderCloudflareRegistered(t *testing.T) {
+	t.Parallel()
 	if _, ok := LookupProvider("cloudflare"); !ok {
 		t.Fatal("expected cloudflare provider to be registered")
 	}
@@ -50,6 +51,7 @@ func TestLoadCredentialsFromEnvMissingValue(t *testing.T) {
 }
 
 func TestValidateConfig(t *testing.T) {
+	t.Parallel()
 	cfg := Config{
 		Email:              "ops@example.com",
 		DirectoryURL:       "https://example.com/acme/directory",

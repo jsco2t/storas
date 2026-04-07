@@ -14,7 +14,7 @@ import (
 
 func TestRunMultipartMaintenanceStartupSweepRemovesStaleUpload(t *testing.T) {
 	t.Parallel()
-	backend, err := storage.NewFSBackend(t.TempDir(), 1024*1024)
+	backend, err := storage.NewFSBackend(t.TempDir(), 1024*1024, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

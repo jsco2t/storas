@@ -18,7 +18,7 @@ import (
 
 func TestStressStorageHighContentionVersionAndMetadataInvariants(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -145,7 +145,7 @@ func parseStressWorkloadDuration(t *testing.T) time.Duration {
 
 func TestStressStorageMultipartCleanupAndListPagination(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
