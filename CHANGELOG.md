@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-06
+
+### Changed
+
+- `internal/storage`
+  - `FSBackend` now accepts an injected `*slog.Logger` at construction time; the application logger is propagated
+    into the backend instead of falling back to the global logger.
+  - Removed unused `defaultMultipartSweepOptions` function.
+- `internal/api`, `internal/sigv4`, `internal/s3`, `internal/policy`
+  - Extracted repeated string literals into named constants: S3 XML namespace, local owner identity, SigV4 terminal
+    suffix, health-check endpoint paths, and S3 ARN prefix.
+
+### Fixed
+
+- `internal/storage`
+  - Atomic version commit now rolls back partial files (payload and metadata) on write failure, preventing orphaned
+    data on disk.
+  - `DeleteBucketLifecycle` and `readBucketMetadata` now propagate unexpected filesystem errors instead of silently
+    discarding them.
+  - Streaming upload body is now bounded by `io.LimitReader` before the size check, preventing unbounded disk
+    writes on oversized requests.
+  - Replaced deprecated `os.IsNotExist` calls with `errors.Is(err, os.ErrNotExist)` throughout the storage,
+    multipart, and lifecycle packages.
+- `internal/api`
+  - Fixed a TOCTOU race in the bucket policy cache where a concurrently-loaded entry could be silently overwritten.
+- `internal/s3err`
+  - `ErrInvalidPartNumber` promoted to a sentinel error variable; error mapping now uses `errors.Is` instead of
+    string comparison, enabling proper error wrapping.
+- `internal/tls/acme`
+  - Replaced `os.IsNotExist` calls with `errors.Is(err, os.ErrNotExist)` in stored-certificate loading.
+- `cmd/storas`
+  - Server shutdown path now uses `errors.Is(err, http.ErrServerClosed)` instead of direct value comparison.
+
 ## [0.1.1] - 2026-02-18
 
 ### Added
