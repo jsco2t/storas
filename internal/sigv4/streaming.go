@@ -77,6 +77,9 @@ func DecodeStreamingPayload(ctx context.Context, src io.Reader, auth RequestAuth
 		return nil, nil, ErrInvalidRequestPayload
 	}
 
+	// reader.Peek(1) detects unexpected trailing bytes after the final zero-size chunk.
+	// It blocks only until a byte or EOF is available; the HTTP server's read deadline
+	// on the underlying net.Conn prevents indefinite blocking for slow clients.
 	if _, err := reader.Peek(1); err != io.EOF {
 		cleanup()
 		return nil, nil, ErrInvalidRequestPayload

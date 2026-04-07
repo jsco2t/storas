@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const aws4RequestTerminal = "aws4_request"
+
 var (
 	ErrInvalidCredentialScope = errors.New("invalid credential scope")
 	ErrInvalidAccessKey       = errors.New("invalid access key")
@@ -24,7 +26,7 @@ func ValidateScope(scope CredentialScope, region, service string) error {
 	if scope.Service != service {
 		return fmt.Errorf("%w: service mismatch", ErrInvalidCredentialScope)
 	}
-	if scope.Terminal != "aws4_request" {
+	if scope.Terminal != aws4RequestTerminal {
 		return fmt.Errorf("%w: terminal must be aws4_request", ErrInvalidCredentialScope)
 	}
 	return nil
@@ -34,7 +36,7 @@ func SigningKey(secret, date, region, service string) []byte {
 	kDate := hmacSHA256([]byte("AWS4"+secret), []byte(date))
 	kRegion := hmacSHA256(kDate, []byte(region))
 	kService := hmacSHA256(kRegion, []byte(service))
-	return hmacSHA256(kService, []byte("aws4_request"))
+	return hmacSHA256(kService, []byte(aws4RequestTerminal))
 }
 
 func SignatureHex(signingKey []byte, stringToSign string) string {

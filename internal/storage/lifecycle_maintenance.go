@@ -118,7 +118,7 @@ func (b *FSBackend) expireCurrentVersions(
 
 	entries, err := os.ReadDir(filepath.Join(b.bucketDir(bucket), "meta"))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return res, nil
 		}
 		return res, fmt.Errorf("list current object metadata for bucket %q: %w", bucket, err)
@@ -191,7 +191,7 @@ func (b *FSBackend) expireNoncurrentVersions(
 
 	keyEntries, err := os.ReadDir(b.objectVersionsRoot(bucket))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return res, nil
 		}
 		return res, fmt.Errorf("list object versions root for bucket %q: %w", bucket, err)
@@ -334,7 +334,7 @@ type keyVersionRecord struct {
 func (b *FSBackend) listKeyVersions(bucket, key string) ([]keyVersionRecord, error) {
 	entries, err := os.ReadDir(b.objectVersionDir(bucket, key))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list key versions for %q/%q: %w", bucket, key, err)

@@ -15,7 +15,7 @@ import (
 
 func TestFSBackendMultipartLifecycle(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestFSBackendMultipartLifecycle(t *testing.T) {
 
 func TestFSBackendAbortMultipartUpload(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestFSBackendAbortMultipartUpload(t *testing.T) {
 
 func TestFSBackendCompleteMultipartUploadValidatesPartOrdering(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestFSBackendCompleteMultipartUploadValidatesPartOrdering(t *testing.T) {
 
 func TestFSBackendUploadPartValidatesInput(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestFSBackendUploadPartValidatesInput(t *testing.T) {
 
 func TestFSBackendListMultipartUploadsMarkerSemantics(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestFSBackendListMultipartUploadsMarkerSemantics(t *testing.T) {
 
 func TestFSBackendMultipartOpsHonorCanceledContext(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestGenerateMultipartUploadIDUniquenessAndFormat(t *testing.T) {
 
 func TestCreateMultipartUploadIDsRemainUniqueUnderConcurrency(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

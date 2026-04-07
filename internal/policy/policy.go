@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	s3ARNPrefix   = "arn:aws:s3:::"
+	S3ARNPrefix   = "arn:aws:s3:::"
 	currentPolicy = "2012-10-17"
 )
 
@@ -1106,10 +1106,10 @@ func parseCIDROrIP(input string) (net.IP, *net.IPNet, error) {
 }
 
 func validateResourceBucket(resource string, bucket string) error {
-	if !strings.HasPrefix(resource, s3ARNPrefix) {
+	if !strings.HasPrefix(resource, S3ARNPrefix) {
 		return fmt.Errorf("%w: bucket policy resource must use arn:aws:s3:::", storage.ErrInvalidRequest)
 	}
-	withoutPrefix := strings.TrimPrefix(resource, s3ARNPrefix)
+	withoutPrefix := strings.TrimPrefix(resource, S3ARNPrefix)
 	bucketPart := withoutPrefix
 	if idx := strings.IndexByte(withoutPrefix, '/'); idx >= 0 {
 		bucketPart = withoutPrefix[:idx]

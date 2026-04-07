@@ -13,7 +13,7 @@ import (
 
 func TestFSBackendObjectLifecycle(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestFSBackendObjectLifecycle(t *testing.T) {
 
 func TestFSBackendListObjectsAndBucketDeleteConstraint(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -81,6 +81,9 @@ func TestFSBackendListObjectsAndBucketDeleteConstraint(t *testing.T) {
 	if len(res.Objects) != 2 {
 		t.Fatalf("expected two objects under prefix, got %d", len(res.Objects))
 	}
+	if len(res.CommonPrefixes) != 0 {
+		t.Fatalf("expected no common prefixes, got %d", len(res.CommonPrefixes))
+	}
 
 	zeroRes, err := backend.ListObjectsV2(context.Background(), "logs-data", ListObjectsOptions{MaxKeys: 0})
 	if err != nil {
@@ -97,7 +100,7 @@ func TestFSBackendListObjectsAndBucketDeleteConstraint(t *testing.T) {
 
 func TestFSBackendListObjectsDelimiterMaxKeysSemantics(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -142,7 +145,7 @@ func TestFSBackendListObjectsDelimiterMaxKeysSemantics(t *testing.T) {
 
 func TestFSBackendListObjectsStartAfterAndContinuationPrecedence(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -188,7 +191,7 @@ func TestFSBackendListObjectsStartAfterAndContinuationPrecedence(t *testing.T) {
 
 func TestFSBackendRangeAndSizeLimit(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), 100)
+	backend, err := NewFSBackend(t.TempDir(), 100, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -196,7 +199,7 @@ func TestFSBackendRangeAndSizeLimit(t *testing.T) {
 		t.Fatalf("CreateBucket error: %v", err)
 	}
 
-	limitedBackend, err := NewFSBackend(t.TempDir(), 5)
+	limitedBackend, err := NewFSBackend(t.TempDir(), 5, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend limited error: %v", err)
 	}
@@ -244,7 +247,7 @@ func TestEncodeDecodeKeyRoundTrip(t *testing.T) {
 
 func TestFSBackendBucketNameValidationRules(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -265,7 +268,7 @@ func TestFSBackendBucketNameValidationRules(t *testing.T) {
 
 func TestFSBackendListObjectsInvalidContinuationToken(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -283,7 +286,7 @@ func TestFSBackendListObjectsInvalidContinuationToken(t *testing.T) {
 
 func TestFSBackendBucketOpsHonorCanceledContext(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -300,7 +303,7 @@ func TestFSBackendBucketOpsHonorCanceledContext(t *testing.T) {
 
 func TestFSBackendBucketMetadataCreationDatePersists(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -331,7 +334,7 @@ func TestFSBackendBucketMetadataCreationDatePersists(t *testing.T) {
 
 func TestFSBackendBucketVersioningState(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -376,7 +379,7 @@ func TestFSBackendBucketVersioningState(t *testing.T) {
 
 func TestFSBackendObjectVersionChainsAndDeleteMarkers(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -432,7 +435,7 @@ func TestFSBackendObjectVersionChainsAndDeleteMarkers(t *testing.T) {
 
 func TestFSBackendDeleteExplicitVersionAndListVersions(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -486,7 +489,7 @@ func TestFSBackendDeleteExplicitVersionAndListVersions(t *testing.T) {
 
 func TestFSBackendDeleteObjectMissingBucketReturnsNoSuchBucket(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -497,7 +500,7 @@ func TestFSBackendDeleteObjectMissingBucketReturnsNoSuchBucket(t *testing.T) {
 
 func TestFSBackendBucketLifecycleCRUD(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -536,7 +539,7 @@ func TestFSBackendBucketLifecycleCRUD(t *testing.T) {
 
 func TestFSBackendBucketPolicyCRUD(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -569,7 +572,7 @@ func TestFSBackendBucketPolicyCRUD(t *testing.T) {
 
 func TestFSBackendObjectOpsHonorCanceledContext(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -596,7 +599,7 @@ func TestFSBackendObjectOpsHonorCanceledContext(t *testing.T) {
 
 func TestFSBackendVersionIDsRemainUniqueUnderParallelWritesAndDeletes(t *testing.T) {
 	t.Parallel()
-	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize)
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}
@@ -665,14 +668,17 @@ func TestFSBackendVersionIDsRemainUniqueUnderParallelWritesAndDeletes(t *testing
 	close(start)
 	wg.Wait()
 	close(errCh)
+	var goroutineErrs []error
 	for runErr := range errCh {
 		if runErr != nil {
-			t.Fatalf("parallel versioning run failed: %v", runErr)
+			goroutineErrs = append(goroutineErrs, runErr)
 		}
 	}
-
-	if len(seen) != expectedIDs {
-		t.Fatalf("expected %d unique version ids, got %d", expectedIDs, len(seen))
+	for _, runErr := range goroutineErrs {
+		t.Errorf("parallel versioning run failed: %v", runErr)
+	}
+	if t.Failed() {
+		return
 	}
 
 	listed := make(map[string]struct{}, expectedIDs)
@@ -696,5 +702,175 @@ func TestFSBackendVersionIDsRemainUniqueUnderParallelWritesAndDeletes(t *testing
 	}
 	if len(listed) != expectedIDs {
 		t.Fatalf("expected %d versions in listing, got %d", expectedIDs, len(listed))
+	}
+}
+
+func TestFSBackendHeadObject(t *testing.T) {
+	t.Parallel()
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
+	if err != nil {
+		t.Fatalf("NewFSBackend error: %v", err)
+	}
+	ctx := context.Background()
+	if err := backend.CreateBucket(ctx, "head-bucket"); err != nil {
+		t.Fatalf("CreateBucket error: %v", err)
+	}
+
+	_, putErr := backend.PutObject(ctx, "head-bucket", "greet.txt", bytes.NewBufferString("hello"), ObjectMetadata{ContentType: "text/plain"})
+	if putErr != nil {
+		t.Fatalf("PutObject error: %v", putErr)
+	}
+
+	meta, err := backend.HeadObject(ctx, "head-bucket", "greet.txt")
+	if err != nil {
+		t.Fatalf("HeadObject error: %v", err)
+	}
+	if meta.ContentLength != 5 {
+		t.Fatalf("expected ContentLength 5, got %d", meta.ContentLength)
+	}
+	if meta.ContentType != "text/plain" {
+		t.Fatalf("expected content-type text/plain, got %q", meta.ContentType)
+	}
+
+	_, err = backend.HeadObject(ctx, "head-bucket", "missing.txt")
+	if !errors.Is(err, ErrNoSuchKey) {
+		t.Fatalf("expected ErrNoSuchKey for missing object, got %v", err)
+	}
+}
+
+func TestFSBackendCopyObject(t *testing.T) {
+	t.Parallel()
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
+	if err != nil {
+		t.Fatalf("NewFSBackend error: %v", err)
+	}
+	ctx := context.Background()
+	if err := backend.CreateBucket(ctx, "src-bucket"); err != nil {
+		t.Fatalf("CreateBucket src error: %v", err)
+	}
+	if err := backend.CreateBucket(ctx, "dst-bucket"); err != nil {
+		t.Fatalf("CreateBucket dst error: %v", err)
+	}
+
+	_, err = backend.PutObject(ctx, "src-bucket", "data.txt", bytes.NewBufferString("payload"), ObjectMetadata{ContentType: "application/octet-stream"})
+	if err != nil {
+		t.Fatalf("PutObject error: %v", err)
+	}
+
+	_, err = backend.CopyObject(ctx, "src-bucket", "data.txt", "dst-bucket", "copy.txt")
+	if err != nil {
+		t.Fatalf("CopyObject error: %v", err)
+	}
+
+	rc, meta, err := backend.GetObject(ctx, "dst-bucket", "copy.txt")
+	if err != nil {
+		t.Fatalf("GetObject after copy error: %v", err)
+	}
+	defer rc.Close()
+	got, _ := io.ReadAll(rc)
+	if string(got) != "payload" {
+		t.Fatalf("unexpected copy content: %q", string(got))
+	}
+	if meta.ContentLength != 7 {
+		t.Fatalf("unexpected copy content length: %d", meta.ContentLength)
+	}
+
+	// Overwrite existing destination
+	_, err = backend.PutObject(ctx, "src-bucket", "new.txt", bytes.NewBufferString("new"), ObjectMetadata{})
+	if err != nil {
+		t.Fatalf("PutObject new error: %v", err)
+	}
+	_, err = backend.CopyObject(ctx, "src-bucket", "new.txt", "dst-bucket", "copy.txt")
+	if err != nil {
+		t.Fatalf("CopyObject overwrite error: %v", err)
+	}
+	rc2, _, err := backend.GetObject(ctx, "dst-bucket", "copy.txt")
+	if err != nil {
+		t.Fatalf("GetObject after overwrite error: %v", err)
+	}
+	defer rc2.Close()
+	got2, _ := io.ReadAll(rc2)
+	if string(got2) != "new" {
+		t.Fatalf("expected overwritten content %q, got %q", "new", string(got2))
+	}
+}
+
+func TestFSBackendGetObjectRangeVersion(t *testing.T) {
+	t.Parallel()
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
+	if err != nil {
+		t.Fatalf("NewFSBackend error: %v", err)
+	}
+	ctx := context.Background()
+	if err := backend.CreateBucket(ctx, "range-bucket"); err != nil {
+		t.Fatalf("CreateBucket error: %v", err)
+	}
+	if err := backend.PutBucketVersioning(ctx, "range-bucket", BucketVersioningEnabled); err != nil {
+		t.Fatalf("PutBucketVersioning error: %v", err)
+	}
+
+	info, err := backend.PutObject(ctx, "range-bucket", "obj.txt", bytes.NewBufferString("0123456789"), ObjectMetadata{})
+	if err != nil {
+		t.Fatalf("PutObject error: %v", err)
+	}
+	versionID := info.VersionID
+
+	// Valid range on the versioned object.
+	rc, _, start, end, err := backend.GetObjectRangeVersion(ctx, "range-bucket", "obj.txt", versionID, "bytes=2-5")
+	if err != nil {
+		t.Fatalf("GetObjectRangeVersion error: %v", err)
+	}
+	defer rc.Close()
+	got, _ := io.ReadAll(rc)
+	if string(got) != "2345" {
+		t.Fatalf("unexpected range content: %q", string(got))
+	}
+	if start != 2 || end != 5 {
+		t.Fatalf("unexpected range bounds: start=%d end=%d", start, end)
+	}
+
+	// Missing version ID.
+	_, _, _, _, err = backend.GetObjectRangeVersion(ctx, "range-bucket", "obj.txt", "invalid-ver-000000000000000000000000000000", "bytes=0-1")
+	if !errors.Is(err, ErrNoSuchVersion) {
+		t.Fatalf("expected ErrNoSuchVersion for missing version, got %v", err)
+	}
+
+	// Invalid range header.
+	_, _, _, _, err = backend.GetObjectRangeVersion(ctx, "range-bucket", "obj.txt", versionID, "bytes=500-600")
+	if !errors.Is(err, ErrInvalidRange) {
+		t.Fatalf("expected ErrInvalidRange for out-of-bounds range, got %v", err)
+	}
+}
+
+func TestFSBackendHeadObjectVersion(t *testing.T) {
+	t.Parallel()
+	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
+	if err != nil {
+		t.Fatalf("NewFSBackend error: %v", err)
+	}
+	ctx := context.Background()
+	if err := backend.CreateBucket(ctx, "hov-bucket"); err != nil {
+		t.Fatalf("CreateBucket error: %v", err)
+	}
+	if err := backend.PutBucketVersioning(ctx, "hov-bucket", BucketVersioningEnabled); err != nil {
+		t.Fatalf("PutBucketVersioning error: %v", err)
+	}
+
+	info, err := backend.PutObject(ctx, "hov-bucket", "versioned.txt", bytes.NewBufferString("abc"), ObjectMetadata{ContentType: "text/plain"})
+	if err != nil {
+		t.Fatalf("PutObject error: %v", err)
+	}
+
+	meta, err := backend.HeadObjectVersion(ctx, "hov-bucket", "versioned.txt", info.VersionID)
+	if err != nil {
+		t.Fatalf("HeadObjectVersion error: %v", err)
+	}
+	if meta.ContentLength != 3 {
+		t.Fatalf("expected ContentLength 3, got %d", meta.ContentLength)
+	}
+
+	_, err = backend.HeadObjectVersion(ctx, "hov-bucket", "versioned.txt", "invalid-ver-000000000000000000000000000000")
+	if !errors.Is(err, ErrNoSuchVersion) {
+		t.Fatalf("expected ErrNoSuchVersion for missing version, got %v", err)
 	}
 }

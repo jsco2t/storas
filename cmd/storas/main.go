@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"log/slog"
@@ -51,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	backend, err := storage.NewFSBackend(cfg.Storage.DataDir, cfg.Server.MaxBodyBytes)
+	backend, err := storage.NewFSBackend(cfg.Storage.DataDir, cfg.Server.MaxBodyBytes, logger)
 	if err != nil {
 		logger.Error("startup failed: storage backend", "error", err)
 		os.Exit(1)
@@ -115,7 +116,7 @@ func main() {
 	}()
 
 	logger.Info("server starting", "addr", cfg.Server.ListenAddress, "tls_enabled", cfg.TLS.Enabled, "tls_mode", cfg.TLS.Mode)
-	if err := srv.Start(); err != nil && err != http.ErrServerClosed {
+	if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server exited with error", "error", err)
 		os.Exit(1)
 	}

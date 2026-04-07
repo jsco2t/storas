@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -47,15 +48,19 @@ type bucketMetadataOnDisk struct {
 type FSBackend struct {
 	rootDir       string
 	maxObjectSize int64
+	logger        *slog.Logger
 	mutationMu    sync.RWMutex
 }
 
-func NewFSBackend(rootDir string, maxObjectSize int64) (*FSBackend, error) {
+func NewFSBackend(rootDir string, maxObjectSize int64, logger *slog.Logger) (*FSBackend, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		return nil, fmt.Errorf("root directory is required")
 	}
 	if maxObjectSize <= 0 {
 		maxObjectSize = defaultMaxObjectSize
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	cleanRoot := filepath.Clean(rootDir)
@@ -63,7 +68,7 @@ func NewFSBackend(rootDir string, maxObjectSize int64) (*FSBackend, error) {
 		return nil, fmt.Errorf("create buckets root: %w", err)
 	}
 
-	return &FSBackend{rootDir: cleanRoot, maxObjectSize: maxObjectSize}, nil
+	return &FSBackend{rootDir: cleanRoot, maxObjectSize: maxObjectSize, logger: logger}, nil
 }
 
 func (b *FSBackend) CreateBucket(ctx context.Context, bucket string) error {
@@ -114,7 +119,7 @@ func (b *FSBackend) DeleteBucket(ctx context.Context, bucket string) error {
 
 	multipartDir := filepath.Join(b.bucketDir(bucket), "multipart")
 	mpEntries, err := os.ReadDir(multipartDir)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read bucket multipart dir: %w", err)
 	}
 	if len(mpEntries) > 0 {
@@ -136,7 +141,7 @@ func (b *FSBackend) HeadBucket(ctx context.Context, bucket string) error {
 	}
 	info, err := os.Stat(b.bucketDir(bucket))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return ErrNoSuchBucket
 		}
 		return fmt.Errorf("stat bucket: %w", err)
@@ -236,7 +241,7 @@ func (b *FSBackend) GetBucketPolicy(ctx context.Context, bucket string) ([]byte,
 	}
 	bytes, err := os.ReadFile(b.bucketPolicyPath(bucket))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNoSuchBucketPolicy
 		}
 		return nil, fmt.Errorf("read bucket policy: %w", err)
@@ -285,7 +290,7 @@ func (b *FSBackend) DeleteBucketPolicy(ctx context.Context, bucket string) error
 	if err := b.HeadBucket(ctx, bucket); err != nil {
 		return err
 	}
-	if err := os.Remove(b.bucketPolicyPath(bucket)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(b.bucketPolicyPath(bucket)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("delete bucket policy: %w", err)
 	}
 	return nil
@@ -300,7 +305,7 @@ func (b *FSBackend) GetBucketLifecycle(ctx context.Context, bucket string) (Life
 	}
 	bytes, err := os.ReadFile(b.bucketLifecyclePath(bucket))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return LifecycleConfiguration{}, ErrNoSuchLifecycleConfiguration
 		}
 		return LifecycleConfiguration{}, fmt.Errorf("read lifecycle: %w", err)
@@ -354,7 +359,9 @@ func (b *FSBackend) DeleteBucketLifecycle(ctx context.Context, bucket string) er
 	if err := b.HeadBucket(ctx, bucket); err != nil {
 		return err
 	}
-	_ = os.Remove(b.bucketLifecyclePath(bucket))
+	if err := os.Remove(b.bucketLifecyclePath(bucket)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete bucket lifecycle: %w", err)
+	}
 	return nil
 }
 
@@ -478,9 +485,14 @@ func (b *FSBackend) putObjectUnderLock(ctx context.Context, bucket, key string, 
 		return ObjectInfo{}, fmt.Errorf("commit metadata: %w", err)
 	}
 	if err := copyFile(payloadPath, versionPayloadPath); err != nil {
+		_ = os.Remove(payloadPath)
+		_ = os.Remove(metaPath)
 		return ObjectInfo{}, fmt.Errorf("commit version payload: %w", err)
 	}
 	if err := copyFile(metaPath, versionMetaPath); err != nil {
+		_ = os.Remove(payloadPath)
+		_ = os.Remove(metaPath)
+		_ = os.Remove(versionPayloadPath)
 		return ObjectInfo{}, fmt.Errorf("commit version metadata: %w", err)
 	}
 
@@ -523,7 +535,7 @@ func (b *FSBackend) getObjectVersionUnlocked(ctx context.Context, bucket, key, v
 	}
 	file, err := os.Open(payloadPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			if versionID != "" {
 				return nil, ObjectMetadata{}, ErrNoSuchVersion
 			}
@@ -593,7 +605,7 @@ func (b *FSBackend) headObjectVersionUnlocked(ctx context.Context, bucket, key, 
 	}
 	bytes, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			if versionID != "" {
 				return ObjectMetadata{}, ErrNoSuchVersion
 			}
@@ -739,7 +751,7 @@ func (b *FSBackend) ListObjectsV2(ctx context.Context, bucket string, opts ListO
 		metaPath := filepath.Join(metaDir, entry.Name())
 		bytes, err := os.ReadFile(metaPath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return ListObjectsResult{}, fmt.Errorf("read object metadata: %w", err)
@@ -867,7 +879,7 @@ func (b *FSBackend) ListObjectVersions(ctx context.Context, bucket string, opts 
 	}
 	entries, err := os.ReadDir(b.objectVersionsRoot(bucket))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return ListObjectVersionsResult{}, nil
 		}
 		return ListObjectVersionsResult{}, fmt.Errorf("read versions root: %w", err)
@@ -1019,6 +1031,9 @@ func (b *FSBackend) bucketPolicyPath(bucket string) string {
 func (b *FSBackend) readBucketMetadata(bucket string) (bucketMetadataOnDisk, error) {
 	path := b.bucketMetaPath(bucket)
 	bytes, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return bucketMetadataOnDisk{}, fmt.Errorf("read bucket metadata: %w", err)
+	}
 	if err == nil {
 		var meta bucketMetadataOnDisk
 		if unmarshalErr := json.Unmarshal(bytes, &meta); unmarshalErr == nil && !meta.CreationDate.IsZero() {
@@ -1033,7 +1048,7 @@ func (b *FSBackend) readBucketMetadata(bucket string) (bucketMetadataOnDisk, err
 	meta := bucketMetadataOnDisk{CreationDate: info.ModTime().UTC()}
 	encoded, marshalErr := json.Marshal(meta)
 	if marshalErr == nil {
-		slog.Warn("bucket.json missing or corrupt; auto-healing from directory mtime", "bucket", bucket, "path", path)
+		b.logger.Warn("bucket.json missing or corrupt; auto-healing from directory mtime", "bucket", bucket, "path", path)
 		_ = writeFileAtomic(path, encoded, 0o644)
 	}
 	return meta, nil
@@ -1090,12 +1105,12 @@ func (b *FSBackend) nextVersionID(bucket, key string) (string, error) {
 func (b *FSBackend) versionIDExists(bucket, key, versionID string) (bool, error) {
 	if _, err := os.Stat(b.objectVersionPath(bucket, key, versionID)); err == nil {
 		return true, nil
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("stat version payload: %w", err)
 	}
 	if _, err := os.Stat(b.objectVersionMetaPath(bucket, key, versionID)); err == nil {
 		return true, nil
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("stat version metadata: %w", err)
 	}
 	return false, nil
@@ -1135,7 +1150,7 @@ func copyFile(src, dst string) error {
 func (b *FSBackend) readObjectVersionMeta(bucket, key, versionID string) (metadataOnDisk, error) {
 	bytes, err := os.ReadFile(b.objectVersionMetaPath(bucket, key, versionID))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return metadataOnDisk{}, ErrNoSuchVersion
 		}
 		return metadataOnDisk{}, fmt.Errorf("read version metadata: %w", err)
@@ -1181,7 +1196,7 @@ func (b *FSBackend) ensureLegacyNullVersion(ctx context.Context, bucket, key str
 	}
 	metaBytes, err := os.ReadFile(b.metaPath(bucket, key))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("read current metadata: %w", err)
@@ -1203,7 +1218,7 @@ func (b *FSBackend) ensureLegacyNullVersion(ctx context.Context, bucket, key str
 	if err := b.writeVersionMeta(bucket, key, nullVersionID, meta); err != nil {
 		return err
 	}
-	if err := copyFile(b.objectPath(bucket, key), b.objectVersionPath(bucket, key, nullVersionID)); err != nil && !os.IsNotExist(err) {
+	if err := copyFile(b.objectPath(bucket, key), b.objectVersionPath(bucket, key, nullVersionID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("copy legacy payload to null version: %w", err)
 	}
 	return b.writeCurrentMeta(bucket, key, meta)
@@ -1216,7 +1231,7 @@ func (b *FSBackend) restoreCurrentFromLatestVersion(ctx context.Context, bucket,
 	dir := b.objectVersionDir(bucket, key)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			_ = os.Remove(b.metaPath(bucket, key))
 			_ = os.Remove(b.objectPath(bucket, key))
 			return nil
@@ -1267,7 +1282,7 @@ func (b *FSBackend) migrateBucketLegacyObjectsToNullVersions(ctx context.Context
 	}
 	entries, err := os.ReadDir(filepath.Join(b.bucketDir(bucket), "meta"))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("read bucket metadata for migration: %w", err)

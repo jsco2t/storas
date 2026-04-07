@@ -2395,7 +2395,7 @@ func testBackendAndEngine(t *testing.T, authYAML string) (*storage.FSBackend, *a
 func testBackendAndEngineWithLimit(t *testing.T, authYAML string, maxObjectSize int64) (*storage.FSBackend, *authz.Engine) {
 	t.Helper()
 	dir := t.TempDir()
-	backend, err := storage.NewFSBackend(filepath.Join(dir, "data"), maxObjectSize)
+	backend, err := storage.NewFSBackend(filepath.Join(dir, "data"), maxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
 	}

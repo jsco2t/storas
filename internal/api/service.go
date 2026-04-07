@@ -21,11 +21,17 @@ import (
 	"time"
 
 	"storas/internal/authz"
+	"storas/internal/config"
 	"storas/internal/policy"
 	"storas/internal/s3"
 	"storas/internal/s3err"
 	"storas/internal/sigv4"
 	"storas/internal/storage"
+)
+
+const (
+	s3XMLNamespace = "http://s3.amazonaws.com/doc/2006-03-01/"
+	localOwnerID   = "local"
 )
 
 type Service struct {
@@ -179,10 +185,10 @@ func (s *Service) logRequest(logger *slog.Logger, r *http.Request, status int, l
 
 func logHealthRequests(logger *slog.Logger, next http.Handler, pathLive, pathReady string) http.Handler {
 	if pathLive == "" {
-		pathLive = "/healthz"
+		pathLive = config.DefaultHealthLive
 	}
 	if pathReady == "" {
-		pathReady = "/readyz"
+		pathReady = config.DefaultHealthReady
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -418,8 +424,8 @@ func (s *Service) handleListBuckets(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	result := listAllMyBucketsResult{
-		XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
-		Owner: owner{ID: "local", DisplayName: "local"},
+		XMLNS: s3XMLNamespace,
+		Owner: owner{ID: localOwnerID, DisplayName: localOwnerID},
 	}
 	for _, bucket := range buckets {
 		info, infoErr := s.Backend.GetBucketInfo(r.Context(), bucket)
@@ -534,7 +540,7 @@ func (s *Service) handleGetBucketVersioning(w http.ResponseWriter, r *http.Reque
 		return err
 	}
 	out := bucketVersioningStatusConfig{
-		XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS: s3XMLNamespace,
 	}
 	if status != storage.BucketVersioningOff {
 		out.Status = string(status)
@@ -638,7 +644,7 @@ func (s *Service) handleGetBucketPolicyStatus(w http.ResponseWriter, r *http.Req
 		return err
 	}
 	out := bucketPolicyStatusResponse{
-		XMLNS:    "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:    s3XMLNamespace,
 		IsPublic: policy.IsPublic(doc),
 	}
 	w.Header().Set("Content-Type", "application/xml")
@@ -1042,7 +1048,7 @@ func (s *Service) handleListObjectsV2(w http.ResponseWriter, r *http.Request, bu
 	}
 
 	result := listBucketResult{
-		XMLNS:                 "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:                 s3XMLNamespace,
 		Name:                  bucket,
 		EncodingType:          encodingType,
 		Prefix:                prefix,
@@ -1061,7 +1067,7 @@ func (s *Service) handleListObjectsV2(w http.ResponseWriter, r *http.Request, bu
 		}
 		item := listObjectContents{Key: key, ETag: quoteETag(obj.ETag), Size: obj.Size, LastModified: formatS3XMLTime(obj.Modified)}
 		if fetchOwner {
-			item.Owner = &owner{ID: "local", DisplayName: "local"}
+			item.Owner = &owner{ID: localOwnerID, DisplayName: localOwnerID}
 		}
 		result.Contents = append(result.Contents, item)
 	}
@@ -1293,7 +1299,7 @@ func (s *Service) handleListObjectVersions(w http.ResponseWriter, r *http.Reques
 		return err
 	}
 	out := listObjectVersionsResult{
-		XMLNS:               "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:               s3XMLNamespace,
 		Name:                bucket,
 		Prefix:              prefix,
 		KeyMarker:           keyMarker,
@@ -1310,7 +1316,7 @@ func (s *Service) handleListObjectVersions(w http.ResponseWriter, r *http.Reques
 				VersionID:    v.VersionID,
 				IsLatest:     v.IsLatest,
 				LastModified: formatS3XMLTime(v.LastModified),
-				Owner:        owner{ID: "local", DisplayName: "local"},
+				Owner:        owner{ID: localOwnerID, DisplayName: localOwnerID},
 			})
 			continue
 		}
@@ -1322,7 +1328,7 @@ func (s *Service) handleListObjectVersions(w http.ResponseWriter, r *http.Reques
 			ETag:         quoteETag(v.ETag),
 			Size:         v.Size,
 			StorageClass: "STANDARD",
-			Owner:        owner{ID: "local", DisplayName: "local"},
+			Owner:        owner{ID: localOwnerID, DisplayName: localOwnerID},
 		})
 	}
 	w.Header().Set("Content-Type", "application/xml")
@@ -1437,7 +1443,7 @@ func (s *Service) handleCreateMultipartUpload(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
 	return xml.NewEncoder(w).Encode(initiateMultipartUploadResult{
-		XMLNS:    "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:    s3XMLNamespace,
 		Bucket:   target.Bucket,
 		Key:      target.Key,
 		UploadID: uploadID,
@@ -1533,7 +1539,7 @@ func (s *Service) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.R
 	}
 	w.WriteHeader(http.StatusOK)
 	return xml.NewEncoder(w).Encode(completeMultipartUploadResult{
-		XMLNS:    "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:    s3XMLNamespace,
 		Location: "/" + target.Bucket + "/" + target.Key,
 		Bucket:   target.Bucket,
 		Key:      target.Key,
@@ -1639,7 +1645,7 @@ func (s *Service) handleListMultipartUploads(w http.ResponseWriter, r *http.Requ
 	}
 
 	out := listMultipartUploadsResult{
-		XMLNS:              "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:              s3XMLNamespace,
 		Bucket:             bucket,
 		EncodingType:       encodingType,
 		Prefix:             prefix,
@@ -1685,16 +1691,16 @@ type listPartsResult struct {
 
 func defaultACLPolicy() aclAccessControlPolicy {
 	return aclAccessControlPolicy{
-		XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
-		Owner: owner{ID: "local", DisplayName: "local"},
+		XMLNS: s3XMLNamespace,
+		Owner: owner{ID: localOwnerID, DisplayName: localOwnerID},
 		AccessControlList: aclGrantListXML{
 			Grants: []aclGrantXML{
 				{
 					Grantee: aclGranteeXML{
 						XMLNSXSI:    "http://www.w3.org/2001/XMLSchema-instance",
 						XSIType:     "CanonicalUser",
-						ID:          "local",
-						DisplayName: "local",
+						ID:          localOwnerID,
+						DisplayName: localOwnerID,
 					},
 					Permission: "FULL_CONTROL",
 				},
@@ -1770,7 +1776,7 @@ func (s *Service) handleListParts(w http.ResponseWriter, r *http.Request, target
 	}
 
 	out := listPartsResult{
-		XMLNS:                "http://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNS:                s3XMLNamespace,
 		Bucket:               target.Bucket,
 		EncodingType:         encodingType,
 		Key:                  key,
@@ -2017,7 +2023,9 @@ func (s *Service) getBucketPolicyDoc(ctx context.Context, bucket string) (policy
 	if s.policyCache == nil {
 		s.policyCache = make(map[string]policy.Document)
 	}
-	s.policyCache[bucket] = doc
+	if _, already := s.policyCache[bucket]; !already {
+		s.policyCache[bucket] = doc
+	}
 	s.policyCacheMu.Unlock()
 	return doc, nil
 }
@@ -2189,10 +2197,10 @@ func policyResourceForAuthResource(action string, resource string) (string, bool
 		if !ok {
 			return "", false
 		}
-		return "arn:aws:s3:::" + bucket, true
+		return policy.S3ARNPrefix + bucket, true
 	default:
 		if strings.Contains(resource, "/") {
-			return "arn:aws:s3:::" + resource, true
+			return policy.S3ARNPrefix + resource, true
 		}
 	}
 	return "", false
