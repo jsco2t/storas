@@ -50,7 +50,7 @@ func New(cfg config.Config, handler http.Handler, logger *slog.Logger) (*Server,
 	case "manual":
 		pair, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("manual tls load failed: invalid tls certificate or key material")
+			return nil, fmt.Errorf("manual tls load: %w", err)
 		}
 		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{pair}}
 	case "self_signed":

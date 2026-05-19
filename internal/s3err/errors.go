@@ -27,6 +27,7 @@ var (
 	SignatureDoesNotMatch              = APIError{Code: "SignatureDoesNotMatch", Message: "The request signature we calculated does not match the signature you provided.", StatusCode: http.StatusForbidden}
 	RequestTimeTooSkewed               = APIError{Code: "RequestTimeTooSkewed", Message: "The difference between the request time and the current time is too large.", StatusCode: http.StatusForbidden}
 	RequestTimeout                     = APIError{Code: "RequestTimeout", Message: "Your socket connection to the server was not read from or written to within the timeout period.", StatusCode: http.StatusBadRequest}
+	ServiceUnavailable                 = APIError{Code: "InternalError", Message: "Service Unavailable", StatusCode: http.StatusServiceUnavailable}
 	NoSuchBucket                       = APIError{Code: "NoSuchBucket", Message: "The specified bucket does not exist.", StatusCode: http.StatusNotFound}
 	NoSuchBucketPolicy                 = APIError{Code: "NoSuchBucketPolicy", Message: "The bucket policy does not exist.", StatusCode: http.StatusNotFound}
 	NoSuchKey                          = APIError{Code: "NoSuchKey", Message: "The specified key does not exist.", StatusCode: http.StatusNotFound}
@@ -78,7 +79,7 @@ func MapError(err error) APIError {
 	var maxBytesErr *http.MaxBytesError
 	switch {
 	case err == nil:
-		return InternalError
+		return APIError{}
 	case errors.As(err, &apiErr):
 		return apiErr
 	case errors.Is(err, storage.ErrNoSuchBucket):
@@ -122,7 +123,7 @@ func MapError(err error) APIError {
 	case errors.Is(err, sigv4.ErrInvalidPayloadHash), errors.Is(err, sigv4.ErrUnsupportedPayloadMode):
 		return InvalidRequest
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return RequestTimeout
+		return ServiceUnavailable
 	case errors.Is(err, sigv4.ErrSignatureMismatch), errors.Is(err, sigv4.ErrInvalidCredentialScope), errors.Is(err, sigv4.ErrMalformedAuthorization), errors.Is(err, sigv4.ErrInvalidSignedHeaders), errors.Is(err, sigv4.ErrInvalidAmzDate):
 		return SignatureDoesNotMatch
 	case errors.Is(err, s3.ErrInvalidRequestPath):

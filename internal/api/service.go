@@ -449,20 +449,25 @@ type createBucketConfiguration struct {
 
 func (s *Service) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) error {
 	if r.Body != nil {
-		decoder := xml.NewDecoder(r.Body)
-		var cfg createBucketConfiguration
-		if err := decoder.Decode(&cfg); err != nil && err != io.EOF {
-			if isRequestBodyTooLarge(err) {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil && readErr != io.EOF {
+			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
-			return storage.ErrInvalidRequest
+			return fmt.Errorf("read request body: %w", readErr)
 		}
-		location := strings.TrimSpace(cfg.LocationConstraint)
-		if location != "" && location != s.Region {
-			return s3err.IllegalLocationConstraintException
-		}
-		if cfg.XMLName.Local != "" && cfg.XMLName.Local != "CreateBucketConfiguration" {
-			return storage.ErrInvalidRequest
+		if len(bodyBytes) > 0 {
+			var cfg createBucketConfiguration
+			if err := xml.Unmarshal(bodyBytes, &cfg); err != nil {
+				return storage.ErrInvalidRequest
+			}
+			location := strings.TrimSpace(cfg.LocationConstraint)
+			if location != "" && location != s.Region {
+				return s3err.IllegalLocationConstraintException
+			}
+			if cfg.XMLName.Local != "" && cfg.XMLName.Local != "CreateBucketConfiguration" {
+				return storage.ErrInvalidRequest
+			}
 		}
 	}
 	if err := s.Backend.CreateBucket(r.Context(), bucket); err != nil {
@@ -599,7 +604,9 @@ func (s *Service) handleGetBucketPolicy(w http.ResponseWriter, r *http.Request, 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(pol)
+	if _, err := w.Write(pol); err != nil {
+		s.Logger.Error("failed to write bucket policy response", "error", err)
+	}
 	return nil
 }
 

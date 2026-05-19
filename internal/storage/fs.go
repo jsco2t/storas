@@ -1203,7 +1203,8 @@ func (b *FSBackend) ensureLegacyNullVersion(ctx context.Context, bucket, key str
 	}
 	var meta metadataOnDisk
 	if err := json.Unmarshal(metaBytes, &meta); err != nil {
-		return nil
+		b.logger.Error("corrupt metadata during legacy migration", "key", key, "error", err)
+		return fmt.Errorf("decode current metadata for migration: %w", err)
 	}
 	if meta.VersionID != "" {
 		return nil
