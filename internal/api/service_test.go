@@ -2537,6 +2537,49 @@ func TestServiceGetBucketPolicyResponseWrittenCorrectly(t *testing.T) {
 	}
 }
 
+// errWriter is an http.ResponseWriter that errors on Write.
+type errWriter struct {
+	httptest.ResponseRecorder
+	err error
+}
+
+func (w *errWriter) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+func TestBucketPolicyHandlerLogsErrorOnWriteFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "bucket:head"
+        resource: "*"
+`)
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }, Logger: logger}
+	h := svc.Handler()
+
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/policy-write-fail-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+
+	policyJSON := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::policy-write-fail-bucket/*"}]}`
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/policy-write-fail-bucket?policy", bytes.NewBufferString(policyJSON), "AKIAFULL", "secret-full"), http.StatusNoContent)
+
+	failingWriter := &errWriter{ResponseRecorder: *httptest.NewRecorder(), err: io.ErrUnexpectedEOF}
+	if err := svc.handleGetBucketPolicy(failingWriter, httptest.NewRequest(http.MethodGet, "http://localhost/policy-write-fail-bucket?policy", nil), "policy-write-fail-bucket"); err != nil {
+		t.Fatalf("handleGetBucketPolicy returned unexpected error: %v", err)
+	}
+
+	if !strings.Contains(logBuf.String(), "failed to write bucket policy response") {
+		t.Fatalf("expected log message for write error, got: %s", logBuf.String())
+	}
+}
+
 func TestServiceCreateBucketBodyReadErrorReturnsInternalServerError(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
