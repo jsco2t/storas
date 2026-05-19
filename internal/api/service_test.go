@@ -2603,3 +2603,64 @@ func TestServiceCreateBucketBodyReadErrorReturnsInternalServerError(t *testing.T
 		t.Fatalf("expected 500 for body read error, got %d body=%s", res.Code, res.Body.String())
 	}
 }
+
+func TestServicePutBucketVersioningBodyReadErrorReturnsInternalServerError(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "bucket:head"
+        resource: "*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/versioning-read-error-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+
+	req := httptest.NewRequest(http.MethodPut, "http://localhost/versioning-read-error-bucket?versioning", failingReader{})
+	signRequest(t, req, now, "AKIAFULL", "secret-full", "us-west-1", "s3")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for body read error, got %d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestServiceCompleteMultipartUploadBodyReadErrorReturnsInternalServerError(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "object:put"
+        resource: "*/*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-read-error-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+	createRes := mustRequest(t, h, signedReq(t, now, http.MethodPost, "http://localhost/multipart-read-error-bucket/file.txt?uploads=", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+	var created struct {
+		UploadID string `xml:"UploadId"`
+	}
+	if err := xml.Unmarshal(createRes.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create multipart response: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/multipart-read-error-bucket/file.txt?uploadId="+created.UploadID, failingReader{})
+	signRequest(t, req, now, "AKIAFULL", "secret-full", "us-west-1", "s3")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for body read error, got %d body=%s", res.Code, res.Body.String())
+	}
+}

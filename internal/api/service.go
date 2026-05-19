@@ -87,6 +87,7 @@ func (s *Service) Handler() http.Handler {
 		PathLive:    s.PathLive,
 		PathReady:   s.PathReady,
 		ReadyCheck:  s.ReadyCheck,
+		Logger:      s.Logger,
 		Handler: func(w http.ResponseWriter, r *http.Request, target s3.RequestTarget, op s3.Operation) {
 			s.limitRequestBody(w, r, op)
 			start := nowFn()
@@ -450,7 +451,7 @@ type createBucketConfiguration struct {
 func (s *Service) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) error {
 	if r.Body != nil {
 		bodyBytes, readErr := io.ReadAll(r.Body)
-		if readErr != nil && readErr != io.EOF {
+		if readErr != nil {
 			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
@@ -561,12 +562,17 @@ func (s *Service) handlePutBucketVersioning(w http.ResponseWriter, r *http.Reque
 	}
 	var req bucketVersioningStatusConfig
 	if r.Body != nil {
-		dec := xml.NewDecoder(r.Body)
-		if err := dec.Decode(&req); err != nil && err != io.EOF {
-			if isRequestBodyTooLarge(err) {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
-			return storage.ErrInvalidRequest
+			return fmt.Errorf("read request body: %w", readErr)
+		}
+		if len(bodyBytes) > 0 {
+			if err := xml.Unmarshal(bodyBytes, &req); err != nil {
+				return storage.ErrInvalidRequest
+			}
 		}
 	}
 	var status storage.BucketVersioningStatus
@@ -1516,15 +1522,20 @@ func (s *Service) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.R
 	}
 	var reqBody completeMultipartUploadRequest
 	if r.Body != nil {
-		decoder := xml.NewDecoder(r.Body)
-		if err := decoder.Decode(&reqBody); err != nil && err != io.EOF {
-			if isRequestBodyTooLarge(err) {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
-			return storage.ErrInvalidPart
+			return fmt.Errorf("read request body: %w", readErr)
 		}
-		if reqBody.XMLName.Local != "" && reqBody.XMLName.Local != "CompleteMultipartUpload" {
-			return storage.ErrInvalidPart
+		if len(bodyBytes) > 0 {
+			if err := xml.Unmarshal(bodyBytes, &reqBody); err != nil {
+				return storage.ErrInvalidPart
+			}
+			if reqBody.XMLName.Local != "" && reqBody.XMLName.Local != "CompleteMultipartUpload" {
+				return storage.ErrInvalidPart
+			}
 		}
 	}
 

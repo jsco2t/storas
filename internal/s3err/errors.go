@@ -27,7 +27,7 @@ var (
 	SignatureDoesNotMatch              = APIError{Code: "SignatureDoesNotMatch", Message: "The request signature we calculated does not match the signature you provided.", StatusCode: http.StatusForbidden}
 	RequestTimeTooSkewed               = APIError{Code: "RequestTimeTooSkewed", Message: "The difference between the request time and the current time is too large.", StatusCode: http.StatusForbidden}
 	RequestTimeout                     = APIError{Code: "RequestTimeout", Message: "Your socket connection to the server was not read from or written to within the timeout period.", StatusCode: http.StatusBadRequest}
-	ServiceUnavailable                 = APIError{Code: "InternalError", Message: "Service Unavailable", StatusCode: http.StatusServiceUnavailable}
+	ServiceUnavailable                 = APIError{Code: "InternalError", Message: "The server is temporarily unable to handle the request. Please retry.", StatusCode: http.StatusServiceUnavailable}
 	NoSuchBucket                       = APIError{Code: "NoSuchBucket", Message: "The specified bucket does not exist.", StatusCode: http.StatusNotFound}
 	NoSuchBucketPolicy                 = APIError{Code: "NoSuchBucketPolicy", Message: "The bucket policy does not exist.", StatusCode: http.StatusNotFound}
 	NoSuchKey                          = APIError{Code: "NoSuchKey", Message: "The specified key does not exist.", StatusCode: http.StatusNotFound}

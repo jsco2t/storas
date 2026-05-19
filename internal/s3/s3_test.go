@@ -1,9 +1,13 @@
 package s3
 
 import (
+	"bytes"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -261,4 +265,40 @@ func TestParseDispatchQueryMultipartFields(t *testing.T) {
 	if !q.HasVersions || !q.HasVersioning || !q.HasPolicy || !q.HasPolicyStatus || !q.HasLifecycle || !q.HasACL {
 		t.Fatalf("expected versions/versioning/policy/policyStatus/lifecycle/acl presence flags, got %+v", q)
 	}
+}
+
+type writeFailingRecorder struct {
+	httptest.ResponseRecorder
+	err error
+}
+
+func (w *writeFailingRecorder) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+func TestRouterLogsWriteFailureOnLivenessEndpoint(t *testing.T) {
+	t.Parallel()
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	router := NewRouter(RouterConfig{ServiceHost: "storage.local", Logger: logger})
+
+	req := httptest.NewRequest(http.MethodGet, "http://storage.local/healthz", nil)
+	res := &writeFailingRecorder{ResponseRecorder: *httptest.NewRecorder(), err: errors.New("simulated write failure")}
+	router.ServeHTTP(res, req)
+
+	if !strings.Contains(logBuf.String(), "failed to write response body") {
+		t.Fatalf("expected write failure log entry, got: %s", logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "liveness") {
+		t.Fatalf("expected log to identify liveness endpoint, got: %s", logBuf.String())
+	}
+}
+
+func TestRouterNilLoggerDoesNotPanicOnWriteFailure(t *testing.T) {
+	t.Parallel()
+	router := NewRouter(RouterConfig{ServiceHost: "storage.local"})
+
+	req := httptest.NewRequest(http.MethodGet, "http://storage.local/healthz", nil)
+	res := &writeFailingRecorder{ResponseRecorder: *httptest.NewRecorder(), err: errors.New("simulated write failure")}
+	router.ServeHTTP(res, req)
 }

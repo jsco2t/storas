@@ -51,9 +51,15 @@ func TestMapErrorContextCancellationReturns503(t *testing.T) {
 	if got.StatusCode != 503 {
 		t.Fatalf("expected 503 for context.Canceled, got status %d", got.StatusCode)
 	}
+	if got.Message == "" || got.Message == "Service Unavailable" {
+		t.Fatalf("expected descriptive ServiceUnavailable message, got %q", got.Message)
+	}
 	got2 := MapError(context.DeadlineExceeded)
 	if got2.StatusCode != 503 {
 		t.Fatalf("expected 503 for context.DeadlineExceeded, got status %d", got2.StatusCode)
+	}
+	if got2.Message != got.Message {
+		t.Fatalf("expected consistent message for canceled and deadline exceeded, got %q vs %q", got.Message, got2.Message)
 	}
 }
 
