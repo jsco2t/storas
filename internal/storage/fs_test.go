@@ -3,9 +3,12 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -843,7 +846,6 @@ func TestFSBackendGetObjectRangeVersion(t *testing.T) {
 }
 
 func TestFSBackendHeadObjectVersion(t *testing.T) {
-	t.Parallel()
 	backend, err := NewFSBackend(t.TempDir(), defaultMaxObjectSize, nil)
 	if err != nil {
 		t.Fatalf("NewFSBackend error: %v", err)
@@ -872,5 +874,73 @@ func TestFSBackendHeadObjectVersion(t *testing.T) {
 	_, err = backend.HeadObjectVersion(ctx, "hov-bucket", "versioned.txt", "invalid-ver-000000000000000000000000000000")
 	if !errors.Is(err, ErrNoSuchVersion) {
 		t.Fatalf("expected ErrNoSuchVersion for missing version, got %v", err)
+	}
+}
+
+func TestFSBackendEnsureLegacyNullVersionPropagatesCorruptMetadataError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	backend, err := NewFSBackend(dir, defaultMaxObjectSize, nil)
+	if err != nil {
+		t.Fatalf("NewFSBackend error: %v", err)
+	}
+	ctx := context.Background()
+	if err := backend.CreateBucket(ctx, "corrupt-bucket"); err != nil {
+		t.Fatalf("CreateBucket error: %v", err)
+	}
+
+	bucketDir := filepath.Join(dir, "buckets", "corrupt-bucket")
+	metaPath := filepath.Join(bucketDir, "meta", EncodeKey("existing-key.txt")+".json")
+	if err := os.MkdirAll(filepath.Dir(metaPath), 0o755); err != nil {
+		t.Fatalf("create meta dir: %v", err)
+	}
+	if err := os.WriteFile(metaPath, []byte("this is not valid json{{{"), 0o644); err != nil {
+		t.Fatalf("write corrupt metadata: %v", err)
+	}
+
+	if err := backend.PutBucketVersioning(ctx, "corrupt-bucket", BucketVersioningEnabled); err == nil {
+		t.Fatal("expected error when enabling versioning with corrupt metadata, got nil")
+	}
+}
+
+func TestFSBackendEnsureLegacyNullVersionSucceedsWithValidMetadata(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	backend, err := NewFSBackend(dir, defaultMaxObjectSize, nil)
+	if err != nil {
+		t.Fatalf("NewFSBackend error: %v", err)
+	}
+	ctx := context.Background()
+	if err := backend.CreateBucket(ctx, "valid-bucket"); err != nil {
+		t.Fatalf("CreateBucket error: %v", err)
+	}
+
+	bucketDir := filepath.Join(dir, "buckets", "valid-bucket")
+	metaPath := filepath.Join(bucketDir, "meta", EncodeKey("existing-key.txt")+".json")
+	if err := os.MkdirAll(filepath.Dir(metaPath), 0o755); err != nil {
+		t.Fatalf("create meta dir: %v", err)
+	}
+	validMeta := metadataOnDisk{
+		Key:           "existing-key.txt",
+		ContentLength: 10,
+		ETag:          "\"abc\"",
+		LastModified:  time.Now().UTC(),
+		UserMetadata:  map[string]string{},
+	}
+	metaBytes, _ := json.Marshal(validMeta)
+	if err := os.WriteFile(metaPath, metaBytes, 0o644); err != nil {
+		t.Fatalf("write valid metadata: %v", err)
+	}
+
+	payloadPath := filepath.Join(bucketDir, "objects", EncodeKey("existing-key.txt")+".bin")
+	if err := os.MkdirAll(filepath.Dir(payloadPath), 0o755); err != nil {
+		t.Fatalf("create objects dir: %v", err)
+	}
+	if err := os.WriteFile(payloadPath, []byte("some data!!"), 0o644); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	if err := backend.PutBucketVersioning(ctx, "valid-bucket", BucketVersioningEnabled); err != nil {
+		t.Fatalf("expected no error enabling versioning with valid legacy metadata, got: %v", err)
 	}
 }

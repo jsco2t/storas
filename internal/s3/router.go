@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -21,6 +22,7 @@ type RouterConfig struct {
 	PathReady   string
 	ReadyCheck  func() error
 	Handler     func(http.ResponseWriter, *http.Request, RequestTarget, Operation)
+	Logger      *slog.Logger
 }
 
 func NewRouter(cfg RouterConfig) http.Handler {
@@ -41,7 +43,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		if _, err := w.Write([]byte("ok")); err != nil {
+			logWriteErr(cfg.Logger, "liveness", err)
+		}
 	})
 	mux.HandleFunc(readyPath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -56,7 +60,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			}
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ready"))
+		if _, err := w.Write([]byte("ready")); err != nil {
+			logWriteErr(cfg.Logger, "readiness", err)
+		}
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +74,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		operation := ResolveOperation(r.Method, target, ParseDispatchQuery(r.URL.Query()), r.Header)
 		if cfg.Handler == nil {
 			w.WriteHeader(http.StatusNotImplemented)
-			_, _ = w.Write([]byte(operation))
+			if _, err := w.Write([]byte(operation)); err != nil {
+				logWriteErr(cfg.Logger, "unimplemented_operation", err)
+			}
 			return
 		}
 		cfg.Handler(w, r, target, operation)
@@ -92,6 +100,13 @@ func GenerateRequestID() string {
 		return fmt.Sprintf("req-%d", time.Now().UnixNano())
 	}
 	return fmt.Sprintf("req-%d-%s", time.Now().UnixNano(), hex.EncodeToString(entropy[:]))
+}
+
+func logWriteErr(logger *slog.Logger, endpoint string, err error) {
+	if logger == nil {
+		return
+	}
+	logger.Error("failed to write response body", "endpoint", endpoint, "error", err)
 }
 
 func RequestIDFromContext(ctx context.Context) string {

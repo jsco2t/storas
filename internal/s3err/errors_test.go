@@ -37,6 +37,32 @@ func TestWriteProducesS3ErrorXML(t *testing.T) {
 	}
 }
 
+func TestMapErrorNilInputReturnsZeroValue(t *testing.T) {
+	t.Parallel()
+	got := MapError(nil)
+	if got.Code != "" || got.Message != "" || got.StatusCode != 0 {
+		t.Fatalf("expected zero-value APIError for nil input, got: %+v", got)
+	}
+}
+
+func TestMapErrorContextCancellationReturns503(t *testing.T) {
+	t.Parallel()
+	got := MapError(context.Canceled)
+	if got.StatusCode != 503 {
+		t.Fatalf("expected 503 for context.Canceled, got status %d", got.StatusCode)
+	}
+	if got.Message == "" || got.Message == "Service Unavailable" {
+		t.Fatalf("expected descriptive ServiceUnavailable message, got %q", got.Message)
+	}
+	got2 := MapError(context.DeadlineExceeded)
+	if got2.StatusCode != 503 {
+		t.Fatalf("expected 503 for context.DeadlineExceeded, got status %d", got2.StatusCode)
+	}
+	if got2.Message != got.Message {
+		t.Fatalf("expected consistent message for canceled and deadline exceeded, got %q vs %q", got.Message, got2.Message)
+	}
+}
+
 func TestMapErrorCanonicalMappings(t *testing.T) {
 	t.Parallel()
 	if got := MapError(AccessDenied); got.Code != "AccessDenied" {
@@ -75,11 +101,11 @@ func TestMapErrorCanonicalMappings(t *testing.T) {
 	if got := MapError(storage.ErrBadDigest); got.Code != "BadDigest" {
 		t.Fatalf("unexpected mapping: %+v", got)
 	}
-	if got := MapError(context.Canceled); got.Code != "RequestTimeout" {
-		t.Fatalf("unexpected mapping: %+v", got)
+	if got := MapError(context.Canceled); got.Code != "InternalError" || got.StatusCode != 503 {
+		t.Fatalf("unexpected mapping for context.Canceled: %+v", got)
 	}
-	if got := MapError(context.DeadlineExceeded); got.Code != "RequestTimeout" {
-		t.Fatalf("unexpected mapping: %+v", got)
+	if got := MapError(context.DeadlineExceeded); got.Code != "InternalError" || got.StatusCode != 503 {
+		t.Fatalf("unexpected mapping for context.DeadlineExceeded: %+v", got)
 	}
 	if got := MapError(sigv4.ErrUnsupportedPayloadMode); got.Code != "InvalidRequest" {
 		t.Fatalf("unexpected mapping: %+v", got)

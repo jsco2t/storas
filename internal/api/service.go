@@ -87,6 +87,7 @@ func (s *Service) Handler() http.Handler {
 		PathLive:    s.PathLive,
 		PathReady:   s.PathReady,
 		ReadyCheck:  s.ReadyCheck,
+		Logger:      s.Logger,
 		Handler: func(w http.ResponseWriter, r *http.Request, target s3.RequestTarget, op s3.Operation) {
 			s.limitRequestBody(w, r, op)
 			start := nowFn()
@@ -449,20 +450,25 @@ type createBucketConfiguration struct {
 
 func (s *Service) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) error {
 	if r.Body != nil {
-		decoder := xml.NewDecoder(r.Body)
-		var cfg createBucketConfiguration
-		if err := decoder.Decode(&cfg); err != nil && err != io.EOF {
-			if isRequestBodyTooLarge(err) {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
-			return storage.ErrInvalidRequest
+			return fmt.Errorf("read request body: %w", readErr)
 		}
-		location := strings.TrimSpace(cfg.LocationConstraint)
-		if location != "" && location != s.Region {
-			return s3err.IllegalLocationConstraintException
-		}
-		if cfg.XMLName.Local != "" && cfg.XMLName.Local != "CreateBucketConfiguration" {
-			return storage.ErrInvalidRequest
+		if len(bodyBytes) > 0 {
+			var cfg createBucketConfiguration
+			if err := xml.Unmarshal(bodyBytes, &cfg); err != nil {
+				return storage.ErrInvalidRequest
+			}
+			location := strings.TrimSpace(cfg.LocationConstraint)
+			if location != "" && location != s.Region {
+				return s3err.IllegalLocationConstraintException
+			}
+			if cfg.XMLName.Local != "" && cfg.XMLName.Local != "CreateBucketConfiguration" {
+				return storage.ErrInvalidRequest
+			}
 		}
 	}
 	if err := s.Backend.CreateBucket(r.Context(), bucket); err != nil {
@@ -556,12 +562,17 @@ func (s *Service) handlePutBucketVersioning(w http.ResponseWriter, r *http.Reque
 	}
 	var req bucketVersioningStatusConfig
 	if r.Body != nil {
-		dec := xml.NewDecoder(r.Body)
-		if err := dec.Decode(&req); err != nil && err != io.EOF {
-			if isRequestBodyTooLarge(err) {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
-			return storage.ErrInvalidRequest
+			return fmt.Errorf("read request body: %w", readErr)
+		}
+		if len(bodyBytes) > 0 {
+			if err := xml.Unmarshal(bodyBytes, &req); err != nil {
+				return storage.ErrInvalidRequest
+			}
 		}
 	}
 	var status storage.BucketVersioningStatus
@@ -599,7 +610,9 @@ func (s *Service) handleGetBucketPolicy(w http.ResponseWriter, r *http.Request, 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(pol)
+	if _, err := w.Write(pol); err != nil {
+		s.Logger.Error("failed to write bucket policy response", "error", err)
+	}
 	return nil
 }
 
@@ -1509,15 +1522,20 @@ func (s *Service) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.R
 	}
 	var reqBody completeMultipartUploadRequest
 	if r.Body != nil {
-		decoder := xml.NewDecoder(r.Body)
-		if err := decoder.Decode(&reqBody); err != nil && err != io.EOF {
-			if isRequestBodyTooLarge(err) {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			if isRequestBodyTooLarge(readErr) {
 				return storage.ErrEntityTooLarge
 			}
-			return storage.ErrInvalidPart
+			return fmt.Errorf("read request body: %w", readErr)
 		}
-		if reqBody.XMLName.Local != "" && reqBody.XMLName.Local != "CompleteMultipartUpload" {
-			return storage.ErrInvalidPart
+		if len(bodyBytes) > 0 {
+			if err := xml.Unmarshal(bodyBytes, &reqBody); err != nil {
+				return storage.ErrInvalidPart
+			}
+			if reqBody.XMLName.Local != "" && reqBody.XMLName.Local != "CompleteMultipartUpload" {
+				return storage.ErrInvalidPart
+			}
 		}
 	}
 

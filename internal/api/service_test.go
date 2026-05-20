@@ -1045,18 +1045,18 @@ func TestServiceReturnsRequestTimeoutForCanceledAndExpiredContext(t *testing.T) 
 	canceledCtx, cancel := context.WithCancel(req.Context())
 	cancel()
 	req = req.WithContext(canceledCtx)
-	res := mustRequest(t, h, req, http.StatusBadRequest)
-	if !strings.Contains(res.Body.String(), "RequestTimeout") {
-		t.Fatalf("expected RequestTimeout for canceled context, got %s", res.Body.String())
+	res := mustRequest(t, h, req, http.StatusServiceUnavailable)
+	if !strings.Contains(res.Body.String(), "InternalError") {
+		t.Fatalf("expected InternalError for canceled context, got %s", res.Body.String())
 	}
 
 	req = signedReq(t, now, http.MethodGet, "http://localhost/", nil, "AKIAFULL", "secret-full")
 	expiredCtx, cancelExpired := context.WithDeadline(req.Context(), now.Add(-time.Second))
 	defer cancelExpired()
 	req = req.WithContext(expiredCtx)
-	res = mustRequest(t, h, req, http.StatusBadRequest)
-	if !strings.Contains(res.Body.String(), "RequestTimeout") {
-		t.Fatalf("expected RequestTimeout for deadline exceeded context, got %s", res.Body.String())
+	res = mustRequest(t, h, req, http.StatusServiceUnavailable)
+	if !strings.Contains(res.Body.String(), "InternalError") {
+		t.Fatalf("expected InternalError for deadline exceeded context, got %s", res.Body.String())
 	}
 }
 
@@ -2499,4 +2499,168 @@ func mustRequest(t *testing.T, handler http.Handler, req *http.Request, wantCode
 		t.Fatalf("unexpected status=%d want=%d body=%s", res.Code, wantCode, res.Body.String())
 	}
 	return res
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) {
+	return 0, fmt.Errorf("simulated io error")
+}
+
+func TestServiceGetBucketPolicyResponseWrittenCorrectly(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "bucket:head"
+        resource: "*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/test-policy-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+
+	policyJSON := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::test-policy-bucket/*"}]}`
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/test-policy-bucket?policy", bytes.NewBufferString(policyJSON), "AKIAFULL", "secret-full"), http.StatusNoContent)
+
+	res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/test-policy-bucket?policy", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+	if res.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("expected application/json content-type, got %s", res.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(res.Body.String(), `"Statement"`) {
+		t.Fatalf("expected policy JSON in response body, got %s", res.Body.String())
+	}
+}
+
+// errWriter is an http.ResponseWriter that errors on Write.
+type errWriter struct {
+	httptest.ResponseRecorder
+	err error
+}
+
+func (w *errWriter) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+func TestBucketPolicyHandlerLogsErrorOnWriteFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "bucket:head"
+        resource: "*"
+`)
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }, Logger: logger}
+	h := svc.Handler()
+
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/policy-write-fail-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+
+	policyJSON := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::policy-write-fail-bucket/*"}]}`
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/policy-write-fail-bucket?policy", bytes.NewBufferString(policyJSON), "AKIAFULL", "secret-full"), http.StatusNoContent)
+
+	failingWriter := &errWriter{ResponseRecorder: *httptest.NewRecorder(), err: io.ErrUnexpectedEOF}
+	if err := svc.handleGetBucketPolicy(failingWriter, httptest.NewRequest(http.MethodGet, "http://localhost/policy-write-fail-bucket?policy", nil), "policy-write-fail-bucket"); err != nil {
+		t.Fatalf("handleGetBucketPolicy returned unexpected error: %v", err)
+	}
+
+	if !strings.Contains(logBuf.String(), "failed to write bucket policy response") {
+		t.Fatalf("expected log message for write error, got: %s", logBuf.String())
+	}
+}
+
+func TestServiceCreateBucketBodyReadErrorReturnsInternalServerError(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+
+	req := httptest.NewRequest(http.MethodPut, "http://localhost/bucket-read-error", failingReader{})
+	signRequest(t, req, now, "AKIAFULL", "secret-full", "us-west-1", "s3")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for body read error, got %d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestServicePutBucketVersioningBodyReadErrorReturnsInternalServerError(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "bucket:head"
+        resource: "*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/versioning-read-error-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+
+	req := httptest.NewRequest(http.MethodPut, "http://localhost/versioning-read-error-bucket?versioning", failingReader{})
+	signRequest(t, req, now, "AKIAFULL", "secret-full", "us-west-1", "s3")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for body read error, got %d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestServiceCompleteMultipartUploadBodyReadErrorReturnsInternalServerError(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:create"
+        resource: "*"
+      - action: "object:put"
+        resource: "*/*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-read-error-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+	createRes := mustRequest(t, h, signedReq(t, now, http.MethodPost, "http://localhost/multipart-read-error-bucket/file.txt?uploads=", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+	var created struct {
+		UploadID string `xml:"UploadId"`
+	}
+	if err := xml.Unmarshal(createRes.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create multipart response: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/multipart-read-error-bucket/file.txt?uploadId="+created.UploadID, failingReader{})
+	signRequest(t, req, now, "AKIAFULL", "secret-full", "us-west-1", "s3")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for body read error, got %d body=%s", res.Code, res.Body.String())
+	}
 }

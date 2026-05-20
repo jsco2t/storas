@@ -113,6 +113,24 @@ func TestManualTLSLoadErrorDoesNotExposeKeyContents(t *testing.T) {
 	}
 }
 
+func TestManualTLSLoadErrorPreservesUnderlyingCause(t *testing.T) {
+	t.Parallel()
+	cfg := baseConfig(t)
+	cfg.TLS.Enabled = true
+	cfg.TLS.Mode = "manual"
+	cfg.TLS.CertFile = "/nonexistent/cert.pem"
+	cfg.TLS.KeyFile = "/nonexistent/key.pem"
+
+	_, err := New(cfg, http.NewServeMux(), nil)
+	if err == nil {
+		t.Fatal("expected manual tls load failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "no such file") && !strings.Contains(msg, "does not exist") {
+		t.Fatalf("expected error to preserve underlying cause about missing file, got: %v", err)
+	}
+}
+
 func TestNewACMEDNSDiagnosticsAndRenewalHook(t *testing.T) {
 	cfg := baseConfig(t)
 	cfg.TLS.Enabled = true
