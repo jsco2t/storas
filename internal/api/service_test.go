@@ -1027,7 +1027,7 @@ func TestServiceCopyObjectRequiresSourceReadPermission(t *testing.T) {
 	}
 }
 
-func TestServiceReturnsRequestTimeoutForCanceledAndExpiredContext(t *testing.T) {
+func TestServiceCanceledContextReturnsRequestTimeout(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
 	backend, engine := testBackendAndEngine(t, `users:
@@ -1045,16 +1045,31 @@ func TestServiceReturnsRequestTimeoutForCanceledAndExpiredContext(t *testing.T) 
 	canceledCtx, cancel := context.WithCancel(req.Context())
 	cancel()
 	req = req.WithContext(canceledCtx)
-	res := mustRequest(t, h, req, http.StatusServiceUnavailable)
-	if !strings.Contains(res.Body.String(), "InternalError") {
-		t.Fatalf("expected InternalError for canceled context, got %s", res.Body.String())
+	res := mustRequest(t, h, req, http.StatusBadRequest)
+	if !strings.Contains(res.Body.String(), "RequestTimeout") {
+		t.Fatalf("expected RequestTimeout for canceled context, got %s", res.Body.String())
 	}
+}
 
-	req = signedReq(t, now, http.MethodGet, "http://localhost/", nil, "AKIAFULL", "secret-full")
+func TestServiceExpiredContextReturnsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
+	backend, engine := testBackendAndEngine(t, `users:
+  - name: "full"
+    access_key: "AKIAFULL"
+    secret_key: "secret-full"
+    allow:
+      - action: "bucket:list"
+        resource: "*"
+`)
+	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
+	h := svc.Handler()
+
+	req := signedReq(t, now, http.MethodGet, "http://localhost/", nil, "AKIAFULL", "secret-full")
 	expiredCtx, cancelExpired := context.WithDeadline(req.Context(), now.Add(-time.Second))
 	defer cancelExpired()
 	req = req.WithContext(expiredCtx)
-	res = mustRequest(t, h, req, http.StatusServiceUnavailable)
+	res := mustRequest(t, h, req, http.StatusServiceUnavailable)
 	if !strings.Contains(res.Body.String(), "InternalError") {
 		t.Fatalf("expected InternalError for deadline exceeded context, got %s", res.Body.String())
 	}

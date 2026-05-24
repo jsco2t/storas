@@ -122,7 +122,9 @@ func MapError(err error) APIError {
 		return RequestTimeTooSkewed
 	case errors.Is(err, sigv4.ErrInvalidPayloadHash), errors.Is(err, sigv4.ErrUnsupportedPayloadMode):
 		return InvalidRequest
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.Canceled):
+		return RequestTimeout
+	case errors.Is(err, context.DeadlineExceeded):
 		return ServiceUnavailable
 	case errors.Is(err, sigv4.ErrSignatureMismatch), errors.Is(err, sigv4.ErrInvalidCredentialScope), errors.Is(err, sigv4.ErrMalformedAuthorization), errors.Is(err, sigv4.ErrInvalidSignedHeaders), errors.Is(err, sigv4.ErrInvalidAmzDate):
 		return SignatureDoesNotMatch

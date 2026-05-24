@@ -3,6 +3,7 @@ package s3err
 import (
 	"context"
 	"encoding/xml"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -45,21 +46,49 @@ func TestMapErrorNilInputReturnsZeroValue(t *testing.T) {
 	}
 }
 
-func TestMapErrorContextCancellationReturns503(t *testing.T) {
+func TestMapErrorCanceledReturnsRequestTimeout(t *testing.T) {
 	t.Parallel()
 	got := MapError(context.Canceled)
+	if got.StatusCode != 400 {
+		t.Fatalf("expected 400 for context.Canceled, got status %d", got.StatusCode)
+	}
+	if got.Code != "RequestTimeout" {
+		t.Fatalf("expected RequestTimeout code for context.Canceled, got %q", got.Code)
+	}
+	if got.Message == "" {
+		t.Fatalf("expected descriptive RequestTimeout message, got empty")
+	}
+}
+
+func TestMapErrorDeadlineExceededReturnsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	got := MapError(context.DeadlineExceeded)
 	if got.StatusCode != 503 {
-		t.Fatalf("expected 503 for context.Canceled, got status %d", got.StatusCode)
+		t.Fatalf("expected 503 for context.DeadlineExceeded, got status %d", got.StatusCode)
 	}
-	if got.Message == "" || got.Message == "Service Unavailable" {
-		t.Fatalf("expected descriptive ServiceUnavailable message, got %q", got.Message)
+	if got.Code != "InternalError" {
+		t.Fatalf("expected InternalError code for context.DeadlineExceeded, got %q", got.Code)
 	}
-	got2 := MapError(context.DeadlineExceeded)
-	if got2.StatusCode != 503 {
-		t.Fatalf("expected 503 for context.DeadlineExceeded, got status %d", got2.StatusCode)
+	if got.Message == "" {
+		t.Fatalf("expected descriptive ServiceUnavailable message, got empty")
 	}
-	if got2.Message != got.Message {
-		t.Fatalf("expected consistent message for canceled and deadline exceeded, got %q vs %q", got.Message, got2.Message)
+}
+
+func TestMapErrorWrappedCanceledReturnsRequestTimeout(t *testing.T) {
+	t.Parallel()
+	wrapped := fmt.Errorf("backend read: %w", context.Canceled)
+	got := MapError(wrapped)
+	if got.Code != "RequestTimeout" || got.StatusCode != 400 {
+		t.Fatalf("expected wrapped context.Canceled to map to RequestTimeout/400, got %+v", got)
+	}
+}
+
+func TestMapErrorWrappedDeadlineExceededReturnsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	wrapped := fmt.Errorf("backend read: %w", context.DeadlineExceeded)
+	got := MapError(wrapped)
+	if got.Code != "InternalError" || got.StatusCode != 503 {
+		t.Fatalf("expected wrapped context.DeadlineExceeded to map to InternalError/503, got %+v", got)
 	}
 }
 
@@ -101,7 +130,7 @@ func TestMapErrorCanonicalMappings(t *testing.T) {
 	if got := MapError(storage.ErrBadDigest); got.Code != "BadDigest" {
 		t.Fatalf("unexpected mapping: %+v", got)
 	}
-	if got := MapError(context.Canceled); got.Code != "InternalError" || got.StatusCode != 503 {
+	if got := MapError(context.Canceled); got.Code != "RequestTimeout" || got.StatusCode != 400 {
 		t.Fatalf("unexpected mapping for context.Canceled: %+v", got)
 	}
 	if got := MapError(context.DeadlineExceeded); got.Code != "InternalError" || got.StatusCode != 503 {
