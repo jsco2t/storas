@@ -2,6 +2,7 @@ package s3
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -69,6 +70,51 @@ func TestParseRequestTargetPathStyleIPv6Host(t *testing.T) {
 	}
 	if target.Bucket != "backup-a" || target.Key != "file.txt" {
 		t.Fatalf("unexpected path style target: %+v", target)
+	}
+}
+
+func TestParseRequestTargetRootPath(t *testing.T) {
+	t.Parallel()
+	r := httptest.NewRequest(http.MethodGet, "http://storage.local/", nil)
+	target, err := ParseRequestTarget(r, "")
+	if err != nil {
+		t.Fatalf("ParseRequestTarget root path error: %v", err)
+	}
+	if target.Style != AddressingPathStyle {
+		t.Fatalf("expected path style, got %s", target.Style)
+	}
+	if target.Bucket != "" || target.Key != "" {
+		t.Fatalf("expected empty bucket and key for root path, got %+v", target)
+	}
+}
+
+func TestParseRequestTargetInvalidBucket(t *testing.T) {
+	t.Parallel()
+	r := httptest.NewRequest(http.MethodGet, "http://storage.local/UPPERCASE/file.txt", nil)
+	_, err := ParseRequestTarget(r, "")
+	if err == nil {
+		t.Fatal("expected error for invalid bucket name")
+	}
+	if !errors.Is(err, ErrInvalidRequestPath) {
+		t.Fatalf("expected ErrInvalidRequestPath, got %v", err)
+	}
+}
+
+func TestParseRequestTargetBucketOnlyPath(t *testing.T) {
+	t.Parallel()
+	r := httptest.NewRequest(http.MethodGet, "http://storage.local/mybucket", nil)
+	target, err := ParseRequestTarget(r, "")
+	if err != nil {
+		t.Fatalf("ParseRequestTarget bucket-only path error: %v", err)
+	}
+	if target.Style != AddressingPathStyle {
+		t.Fatalf("expected path style, got %s", target.Style)
+	}
+	if target.Bucket != "mybucket" {
+		t.Fatalf("expected bucket 'mybucket', got %q", target.Bucket)
+	}
+	if target.Key != "" {
+		t.Fatalf("expected empty key for bucket-only path, got %q", target.Key)
 	}
 }
 
@@ -176,6 +222,34 @@ func TestResolveOperation(t *testing.T) {
 	if op != OperationCopyObject {
 		t.Fatalf("expected copy object for query copy source presence, got %s", op)
 	}
+
+	// Missing bucket-key paths
+	op = ResolveOperation(http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{})
+	if op != OperationCreateBucket {
+		t.Fatalf("expected create bucket, got %s", op)
+	}
+	op = ResolveOperation(http.MethodPut, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
+	if op != OperationPutObject {
+		t.Fatalf("expected put object, got %s", op)
+	}
+	op = ResolveOperation(http.MethodGet, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
+	if op != OperationGetObject {
+		t.Fatalf("expected get object, got %s", op)
+	}
+	op = ResolveOperation(http.MethodDelete, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
+	if op != OperationDeleteObject {
+		t.Fatalf("expected delete object, got %s", op)
+	}
+
+	// Unknown method returns OperationUnknown
+	op = ResolveOperation(http.MethodPatch, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{})
+	if op != OperationUnknown {
+		t.Fatalf("expected unknown for PATCH method, got %s", op)
+	}
+	op = ResolveOperation(http.MethodPatch, RequestTarget{Bucket: "bucket", Key: "file"}, DispatchQuery{}, http.Header{})
+	if op != OperationUnknown {
+		t.Fatalf("expected unknown for PATCH method with key, got %s", op)
+	}
 }
 
 func TestRouterAddsRequestIDAndHealth(t *testing.T) {
@@ -215,6 +289,90 @@ func TestRouterHealthOnlyAllowsGET(t *testing.T) {
 	}
 	if res.Header().Get("Allow") != http.MethodGet {
 		t.Fatalf("expected Allow=GET, got %q", res.Header().Get("Allow"))
+	}
+}
+
+func TestRouterCustomHealthPaths(t *testing.T) {
+	t.Parallel()
+	router := NewRouter(RouterConfig{
+		ServiceHost: "storage.local",
+		PathLive:    "/live",
+		PathReady:   "/ready",
+	})
+
+	// Custom live path works
+	req := httptest.NewRequest(http.MethodGet, "http://storage.local/live", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 on custom live path, got %d", res.Code)
+	}
+
+	// Custom ready path works
+	req = httptest.NewRequest(http.MethodGet, "http://storage.local/ready", nil)
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 on custom ready path, got %d", res.Code)
+	}
+
+	// Default paths fall through to catch-all (no Handler configured = 501)
+	req = httptest.NewRequest(http.MethodGet, "http://storage.local/healthz", nil)
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 on default path when custom paths set, got %d", res.Code)
+	}
+}
+
+func TestRouterReadyCheckFailure(t *testing.T) {
+	t.Parallel()
+	router := NewRouter(RouterConfig{
+		ServiceHost: "storage.local",
+		ReadyCheck: func() error {
+			return errors.New("disk full")
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://storage.local/readyz", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on ready check failure, got %d", res.Code)
+	}
+	if !strings.Contains(res.Body.String(), "disk full") {
+		t.Fatalf("expected error body, got %q", res.Body.String())
+	}
+}
+
+func TestRouterCustomHandler(t *testing.T) {
+	t.Parallel()
+	var gotTarget RequestTarget
+	var gotOp Operation
+	router := NewRouter(RouterConfig{
+		ServiceHost: "storage.local",
+		Handler: func(w http.ResponseWriter, r *http.Request, target RequestTarget, op Operation) {
+			gotTarget = target
+			gotOp = op
+			w.WriteHeader(http.StatusOK)
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "http://storage.local/mybucket/mykey", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.Code)
+	}
+	if gotTarget.Bucket != "mybucket" {
+		t.Fatalf("expected bucket 'mybucket', got %q", gotTarget.Bucket)
+	}
+	if gotTarget.Key != "mykey" {
+		t.Fatalf("expected key 'mykey', got %q", gotTarget.Key)
+	}
+	if gotOp != OperationPutObject {
+		t.Fatalf("expected put object, got %s", gotOp)
 	}
 }
 
@@ -267,6 +425,28 @@ func TestParseDispatchQueryMultipartFields(t *testing.T) {
 	}
 }
 
+func TestParseDispatchQueryListFields(t *testing.T) {
+	t.Parallel()
+	q := ParseDispatchQuery(map[string][]string{
+		"delimiter":          {"/"},
+		"prefix":             {"logs/"},
+		"continuation-token": {"token123"},
+		"max-keys":           {"100"},
+	})
+	if q.Delimiter != "/" {
+		t.Fatalf("expected delimiter '/', got %q", q.Delimiter)
+	}
+	if q.Prefix != "logs/" {
+		t.Fatalf("expected prefix 'logs/', got %q", q.Prefix)
+	}
+	if q.Continuation != "token123" {
+		t.Fatalf("expected continuation 'token123', got %q", q.Continuation)
+	}
+	if q.MaxKeys != "100" {
+		t.Fatalf("expected max-keys '100', got %q", q.MaxKeys)
+	}
+}
+
 type writeFailingRecorder struct {
 	httptest.ResponseRecorder
 	err error
@@ -301,4 +481,27 @@ func TestRouterNilLoggerDoesNotPanicOnWriteFailure(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://storage.local/healthz", nil)
 	res := &writeFailingRecorder{ResponseRecorder: *httptest.NewRecorder(), err: errors.New("simulated write failure")}
 	router.ServeHTTP(res, req)
+}
+
+func TestRequestIDFromContext(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Missing key returns empty string
+	if got := RequestIDFromContext(ctx); got != "" {
+		t.Fatalf("expected empty string for missing key, got %q", got)
+	}
+
+	// Valid request ID from context
+	reqID := "req-12345-abcdef0123456789"
+	ctx = context.WithValue(ctx, requestIDContextKey, reqID)
+	if got := RequestIDFromContext(ctx); got != reqID {
+		t.Fatalf("expected %q, got %q", reqID, got)
+	}
+
+	// Wrong key type returns empty string
+	ctx2 := context.WithValue(context.Background(), "not_a_context_key", reqID)
+	if got := RequestIDFromContext(ctx2); got != "" {
+		t.Fatalf("expected empty string for wrong key type, got %q", got)
+	}
 }
