@@ -224,32 +224,38 @@ func TestResolveOperation(t *testing.T) {
 	}
 
 	// Missing bucket-key paths
-	op = ResolveOperation(http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{})
-	if op != OperationCreateBucket {
-		t.Fatalf("expected create bucket, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
-	if op != OperationPutObject {
-		t.Fatalf("expected put object, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
-	if op != OperationGetObject {
-		t.Fatalf("expected get object, got %s", op)
-	}
-	op = ResolveOperation(http.MethodDelete, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
-	if op != OperationDeleteObject {
-		t.Fatalf("expected delete object, got %s", op)
-	}
+	t.Run("basic CRUD with no query params", func(t *testing.T) {
+		t.Parallel()
+		op := ResolveOperation(http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{})
+		if op != OperationCreateBucket {
+			t.Fatalf("expected create bucket, got %s", op)
+		}
+		op = ResolveOperation(http.MethodPut, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
+		if op != OperationPutObject {
+			t.Fatalf("expected put object, got %s", op)
+		}
+		op = ResolveOperation(http.MethodGet, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
+		if op != OperationGetObject {
+			t.Fatalf("expected get object, got %s", op)
+		}
+		op = ResolveOperation(http.MethodDelete, RequestTarget{Bucket: "bucket", Key: "myfile"}, DispatchQuery{}, http.Header{})
+		if op != OperationDeleteObject {
+			t.Fatalf("expected delete object, got %s", op)
+		}
+	})
 
 	// Unknown method returns OperationUnknown
-	op = ResolveOperation(http.MethodPatch, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{})
-	if op != OperationUnknown {
-		t.Fatalf("expected unknown for PATCH method, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPatch, RequestTarget{Bucket: "bucket", Key: "file"}, DispatchQuery{}, http.Header{})
-	if op != OperationUnknown {
-		t.Fatalf("expected unknown for PATCH method with key, got %s", op)
-	}
+	t.Run("unknown method returns OperationUnknown", func(t *testing.T) {
+		t.Parallel()
+		op := ResolveOperation(http.MethodPatch, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{})
+		if op != OperationUnknown {
+			t.Fatalf("expected unknown for PATCH method, got %s", op)
+		}
+		op = ResolveOperation(http.MethodPatch, RequestTarget{Bucket: "bucket", Key: "file"}, DispatchQuery{}, http.Header{})
+		if op != OperationUnknown {
+			t.Fatalf("expected unknown for PATCH method with key, got %s", op)
+		}
+	})
 }
 
 func TestRouterAddsRequestIDAndHealth(t *testing.T) {
@@ -316,7 +322,8 @@ func TestRouterCustomHealthPaths(t *testing.T) {
 		t.Fatalf("expected 200 on custom ready path, got %d", res.Code)
 	}
 
-	// Default paths fall through to catch-all (no Handler configured = 501)
+	// Default /healthz is not registered as a health path, so it hits the catch-all
+	// which returns 501 because no Handler is configured
 	req = httptest.NewRequest(http.MethodGet, "http://storage.local/healthz", nil)
 	res = httptest.NewRecorder()
 	router.ServeHTTP(res, req)

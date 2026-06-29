@@ -4,7 +4,14 @@ import "testing"
 
 func TestIsValidBucketName(t *testing.T) {
 	t.Parallel()
-	valid := []string{"abc", "backup-01", "logs-prod", "logs.prod", "a.b-c.9", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	valid := []string{
+		"abc",
+		"backup-01",
+		"logs-prod",
+		"logs.prod",
+		"a.b-c.9",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 63 chars — max valid S3 bucket name length
+	}
 	for _, name := range valid {
 		if !IsValidBucketName(name) {
 			t.Fatalf("expected valid bucket: %s", name)
@@ -24,7 +31,7 @@ func TestIsValidBucketName(t *testing.T) {
 		"label-.dash",
 		"192.168.1.10",
 		"has_underscore",
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 64 chars — exceeds max S3 bucket name length
 	}
 	for _, name := range invalid {
 		if IsValidBucketName(name) {
