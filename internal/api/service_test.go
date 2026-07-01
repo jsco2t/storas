@@ -133,70 +133,86 @@ func TestServiceBucketAndObjectHandlers(t *testing.T) {
 	svc := &Service{Backend: backend, Authz: engine, Region: "us-west-1", ServiceName: "s3", ClockSkew: 15 * time.Minute, Now: func() time.Time { return now }}
 	h := svc.Handler()
 
+	// Shared setup: create two buckets and seed an object.
 	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/backup-a", nil, "AKIAFULL", "secret-full"), http.StatusOK)
 	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/backup-b", nil, "AKIAFULL", "secret-full"), http.StatusOK)
-
-	put := signedReq(t, now, http.MethodPut, "http://localhost/backup-a/dir/file.txt", bytes.NewBufferString("hello-world"), "AKIAFULL", "secret-full")
-	put.Header.Set("Content-Type", "text/plain")
-	put.Header.Set("x-amz-meta-owner", "qa")
-	putRes := mustRequest(t, h, put, http.StatusOK)
+	putReq := signedReq(t, now, http.MethodPut, "http://localhost/backup-a/dir/file.txt", bytes.NewBufferString("hello-world"), "AKIAFULL", "secret-full")
+	putReq.Header.Set("Content-Type", "text/plain")
+	putReq.Header.Set("x-amz-meta-owner", "qa")
+	putRes := mustRequest(t, h, putReq, http.StatusOK)
 	if putRes.Header().Get("ETag") == "" {
 		t.Fatal("expected ETag header on PutObject")
 	}
 
-	listRes := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/backup-a?list-type=2&prefix=dir/", nil, "AKIAFULL", "secret-full"), http.StatusOK)
-	if !strings.Contains(listRes.Body.String(), "ListBucketResult") {
-		t.Fatalf("expected list bucket XML, body=%s", listRes.Body.String())
-	}
+	t.Run("ListObjects", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/backup-a?list-type=2&prefix=dir/", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+		if !strings.Contains(res.Body.String(), "ListBucketResult") {
+			t.Fatalf("expected list bucket XML, body=%s", res.Body.String())
+		}
+	})
 
-	getRes := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusOK)
-	if got := getRes.Body.String(); got != "hello-world" {
-		t.Fatalf("unexpected get payload: %q", got)
-	}
+	t.Run("GetObject", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+		if got := res.Body.String(); got != "hello-world" {
+			t.Fatalf("unexpected get payload: %q", got)
+		}
+	})
 
-	rangeReq := signedReq(t, now, http.MethodGet, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full")
-	rangeReq.Header.Set("Range", "bytes=0-4")
-	rangeRes := mustRequest(t, h, rangeReq, http.StatusPartialContent)
-	if got := rangeRes.Body.String(); got != "hello" {
-		t.Fatalf("unexpected range payload: %q", got)
-	}
-	if rangeRes.Header().Get("Content-Length") != "5" {
-		t.Fatalf("expected range content-length=5, got %q", rangeRes.Header().Get("Content-Length"))
-	}
-	if rangeRes.Header().Get("Accept-Ranges") != "bytes" {
-		t.Fatalf("expected Accept-Ranges=bytes, got %q", rangeRes.Header().Get("Accept-Ranges"))
-	}
+	t.Run("GetObjectRange", func(t *testing.T) {
+		req := signedReq(t, now, http.MethodGet, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full")
+		req.Header.Set("Range", "bytes=0-4")
+		res := mustRequest(t, h, req, http.StatusPartialContent)
+		if got := res.Body.String(); got != "hello" {
+			t.Fatalf("unexpected range payload: %q", got)
+		}
+		if res.Header().Get("Content-Length") != "5" {
+			t.Fatalf("expected range content-length=5, got %q", res.Header().Get("Content-Length"))
+		}
+		if res.Header().Get("Accept-Ranges") != "bytes" {
+			t.Fatalf("expected Accept-Ranges=bytes, got %q", res.Header().Get("Accept-Ranges"))
+		}
+	})
 
-	headRes := mustRequest(t, h, signedReq(t, now, http.MethodHead, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusOK)
-	if headRes.Header().Get("x-amz-meta-owner") != "qa" {
-		t.Fatalf("expected x-amz-meta-owner header, got %q", headRes.Header().Get("x-amz-meta-owner"))
-	}
-	if headRes.Header().Get("Accept-Ranges") != "bytes" {
-		t.Fatalf("expected Accept-Ranges=bytes, got %q", headRes.Header().Get("Accept-Ranges"))
-	}
+	t.Run("HeadObject", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodHead, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+		if res.Header().Get("x-amz-meta-owner") != "qa" {
+			t.Fatalf("expected x-amz-meta-owner header, got %q", res.Header().Get("x-amz-meta-owner"))
+		}
+		if res.Header().Get("Accept-Ranges") != "bytes" {
+			t.Fatalf("expected Accept-Ranges=bytes, got %q", res.Header().Get("Accept-Ranges"))
+		}
+	})
 
-	copyReq := signedReq(t, now, http.MethodPut, "http://localhost/backup-b/copied.txt", nil, "AKIAFULL", "secret-full")
-	copyReq.Header.Set("X-Amz-Copy-Source", "/backup-a/dir/file.txt")
-	copyRes := mustRequest(t, h, copyReq, http.StatusOK)
-	if !strings.Contains(copyRes.Body.String(), "CopyObjectResult") {
-		t.Fatalf("expected copy XML body, got %s", copyRes.Body.String())
-	}
+	t.Run("CopyObject", func(t *testing.T) {
+		copyReq := signedReq(t, now, http.MethodPut, "http://localhost/backup-b/copied.txt", nil, "AKIAFULL", "secret-full")
+		copyReq.Header.Set("X-Amz-Copy-Source", "/backup-a/dir/file.txt")
+		copyRes := mustRequest(t, h, copyReq, http.StatusOK)
+		if !strings.Contains(copyRes.Body.String(), "CopyObjectResult") {
+			t.Fatalf("expected copy XML body, got %s", copyRes.Body.String())
+		}
+	})
 
-	mustRequest(t, h, signedReq(t, now, http.MethodDelete, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusNoContent)
-	mustRequest(t, h, signedReq(t, now, http.MethodDelete, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusNoContent)
+	t.Run("DeleteObjectIdempotent", func(t *testing.T) {
+		mustRequest(t, h, signedReq(t, now, http.MethodDelete, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusNoContent)
+		mustRequest(t, h, signedReq(t, now, http.MethodDelete, "http://localhost/backup-a/dir/file.txt", nil, "AKIAFULL", "secret-full"), http.StatusNoContent)
+	})
 
-	bucketDelete := mustRequest(t, h, signedReq(t, now, http.MethodDelete, "http://localhost/backup-b", nil, "AKIAFULL", "secret-full"), http.StatusConflict)
-	if !strings.Contains(bucketDelete.Body.String(), "BucketNotEmpty") {
-		t.Fatalf("expected BucketNotEmpty, got %s", bucketDelete.Body.String())
-	}
+	t.Run("DeleteBucketNotEmpty", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodDelete, "http://localhost/backup-b", nil, "AKIAFULL", "secret-full"), http.StatusConflict)
+		if !strings.Contains(res.Body.String(), "BucketNotEmpty") {
+			t.Fatalf("expected BucketNotEmpty, got %s", res.Body.String())
+		}
+	})
 
-	listBuckets := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/", nil, "AKIAFULL", "secret-full"), http.StatusOK)
-	var parsed struct {
-		XMLName xml.Name `xml:"ListAllMyBucketsResult"`
-	}
-	if err := xml.Unmarshal(listBuckets.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("list buckets XML parse: %v", err)
-	}
+	t.Run("ListBucketsXML", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+		var parsed struct {
+			XMLName xml.Name `xml:"ListAllMyBucketsResult"`
+		}
+		if err := xml.Unmarshal(res.Body.Bytes(), &parsed); err != nil {
+			t.Fatalf("list buckets XML parse: %v", err)
+		}
+	})
 }
 
 func TestServicePutObjectHonorsBodySizeLimit(t *testing.T) {
@@ -551,20 +567,7 @@ func TestServiceMultipartInvalidRequests(t *testing.T) {
 	h := svc.Handler()
 	mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-bucket", nil, "AKIAFULL", "secret-full"), http.StatusOK)
 
-	res := mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-bucket/file.txt?uploadId=u1", bytes.NewBufferString("x"), "AKIAFULL", "secret-full"), http.StatusMethodNotAllowed)
-	if !strings.Contains(res.Body.String(), "MethodNotAllowed") {
-		t.Fatalf("expected MethodNotAllowed for malformed upload part operation, got %s", res.Body.String())
-	}
-
-	listUploads := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket?uploads=&max-uploads=-1", nil, "AKIAFULL", "secret-full"), http.StatusBadRequest)
-	if !strings.Contains(listUploads.Body.String(), "InvalidRequest") {
-		t.Fatalf("expected InvalidRequest for max-uploads, got %s", listUploads.Body.String())
-	}
-	listUploadsMarker := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket?uploads=&upload-id-marker=u1", nil, "AKIAFULL", "secret-full"), http.StatusBadRequest)
-	if !strings.Contains(listUploadsMarker.Body.String(), "InvalidRequest") {
-		t.Fatalf("expected InvalidRequest for upload-id-marker without key-marker, got %s", listUploadsMarker.Body.String())
-	}
-
+	// -- Setup: create a multipart upload with two parts. --
 	create := mustRequest(t, h, signedReq(t, now, http.MethodPost, "http://localhost/multipart-bucket/file.txt?uploads=", nil, "AKIAFULL", "secret-full"), http.StatusOK)
 	var created struct {
 		UploadID string `xml:"UploadId"`
@@ -575,20 +578,48 @@ func TestServiceMultipartInvalidRequests(t *testing.T) {
 	part := mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-bucket/file.txt?partNumber=1&uploadId="+created.UploadID, bytes.NewBufferString("abc"), "AKIAFULL", "secret-full"), http.StatusOK)
 	part2 := mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-bucket/file.txt?partNumber=2&uploadId="+created.UploadID, bytes.NewBufferString("def"), "AKIAFULL", "secret-full"), http.StatusOK)
 
-	listParts := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket/file.txt?uploadId="+created.UploadID+"&max-parts=5000", nil, "AKIAFULL", "secret-full"), http.StatusOK)
-	if !strings.Contains(listParts.Body.String(), "<MaxParts>1000</MaxParts>") {
-		t.Fatalf("expected max-parts clamp to 1000, got %s", listParts.Body.String())
-	}
-	invalidPartMarker := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket/file.txt?uploadId="+created.UploadID+"&part-number-marker=10001", nil, "AKIAFULL", "secret-full"), http.StatusBadRequest)
-	if !strings.Contains(invalidPartMarker.Body.String(), "InvalidRequest") {
-		t.Fatalf("expected InvalidRequest for part-number-marker > 10000, got %s", invalidPartMarker.Body.String())
-	}
+	t.Run("MalformedUploadPartReturnsMethodNotAllowed", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodPut, "http://localhost/multipart-bucket/file.txt?uploadId=u1", bytes.NewBufferString("x"), "AKIAFULL", "secret-full"), http.StatusMethodNotAllowed)
+		if !strings.Contains(res.Body.String(), "MethodNotAllowed") {
+			t.Fatalf("expected MethodNotAllowed for malformed upload part operation, got %s", res.Body.String())
+		}
+	})
 
-	invalidOrder := `<CompleteMultipartUpload><Part><PartNumber>2</PartNumber><ETag>` + part2.Header().Get("ETag") + `</ETag></Part><Part><PartNumber>1</PartNumber><ETag>` + part.Header().Get("ETag") + `</ETag></Part></CompleteMultipartUpload>`
-	invalidOrderRes := mustRequest(t, h, signedReq(t, now, http.MethodPost, "http://localhost/multipart-bucket/file.txt?uploadId="+created.UploadID, bytes.NewBufferString(invalidOrder), "AKIAFULL", "secret-full"), http.StatusBadRequest)
-	if !strings.Contains(invalidOrderRes.Body.String(), "InvalidPartOrder") {
-		t.Fatalf("expected InvalidPartOrder, got %s", invalidOrderRes.Body.String())
-	}
+	t.Run("NegativeMaxUploadsReturnsInvalidRequest", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket?uploads=&max-uploads=-1", nil, "AKIAFULL", "secret-full"), http.StatusBadRequest)
+		if !strings.Contains(res.Body.String(), "InvalidRequest") {
+			t.Fatalf("expected InvalidRequest for max-uploads, got %s", res.Body.String())
+		}
+	})
+
+	t.Run("UploadIDMarkerWithoutKeyMarkerReturnsInvalidRequest", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket?uploads=&upload-id-marker=u1", nil, "AKIAFULL", "secret-full"), http.StatusBadRequest)
+		if !strings.Contains(res.Body.String(), "InvalidRequest") {
+			t.Fatalf("expected InvalidRequest for upload-id-marker without key-marker, got %s", res.Body.String())
+		}
+	})
+
+	t.Run("ListPartsMaxPartsClamp", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket/file.txt?uploadId="+created.UploadID+"&max-parts=5000", nil, "AKIAFULL", "secret-full"), http.StatusOK)
+		if !strings.Contains(res.Body.String(), "<MaxParts>1000</MaxParts>") {
+			t.Fatalf("expected max-parts clamp to 1000, got %s", res.Body.String())
+		}
+	})
+
+	t.Run("PartNumberMarkerExceedsMaximumReturnsInvalidRequest", func(t *testing.T) {
+		res := mustRequest(t, h, signedReq(t, now, http.MethodGet, "http://localhost/multipart-bucket/file.txt?uploadId="+created.UploadID+"&part-number-marker=10001", nil, "AKIAFULL", "secret-full"), http.StatusBadRequest)
+		if !strings.Contains(res.Body.String(), "InvalidRequest") {
+			t.Fatalf("expected InvalidRequest for part-number-marker > 10000, got %s", res.Body.String())
+		}
+	})
+
+	t.Run("InvalidPartOrderReturnsBadRequest", func(t *testing.T) {
+		invalidOrder := `<CompleteMultipartUpload><Part><PartNumber>2</PartNumber><ETag>` + part2.Header().Get("ETag") + `</ETag></Part><Part><PartNumber>1</PartNumber><ETag>` + part.Header().Get("ETag") + `</ETag></Part></CompleteMultipartUpload>`
+		res := mustRequest(t, h, signedReq(t, now, http.MethodPost, "http://localhost/multipart-bucket/file.txt?uploadId="+created.UploadID, bytes.NewBufferString(invalidOrder), "AKIAFULL", "secret-full"), http.StatusBadRequest)
+		if !strings.Contains(res.Body.String(), "InvalidPartOrder") {
+			t.Fatalf("expected InvalidPartOrder, got %s", res.Body.String())
+		}
+	})
 }
 
 func TestServiceMultipartListEncodingAndMarkerSemantics(t *testing.T) {

@@ -74,107 +74,82 @@ func TestParseRequestTargetPathStyleIPv6Host(t *testing.T) {
 
 func TestResolveOperation(t *testing.T) {
 	t.Parallel()
-	target := RequestTarget{Bucket: "bucket", Key: ""}
-	op := ResolveOperation(http.MethodGet, target, DispatchQuery{ListType: "2"}, http.Header{})
-	if op != OperationListObjects {
-		t.Fatalf("expected list objects, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasVersioning: true}, http.Header{})
-	if op != OperationGetBucketVersioning {
-		t.Fatalf("expected get bucket versioning, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasVersioning: true}, http.Header{})
-	if op != OperationPutBucketVersioning {
-		t.Fatalf("expected put bucket versioning, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasPolicy: true}, http.Header{})
-	if op != OperationGetBucketPolicy {
-		t.Fatalf("expected get bucket policy, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasPolicy: true}, http.Header{})
-	if op != OperationPutBucketPolicy {
-		t.Fatalf("expected put bucket policy, got %s", op)
-	}
-	op = ResolveOperation(http.MethodDelete, target, DispatchQuery{HasPolicy: true}, http.Header{})
-	if op != OperationDeleteBucketPolicy {
-		t.Fatalf("expected delete bucket policy, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasPolicyStatus: true}, http.Header{})
-	if op != OperationGetBucketPolicyStatus {
-		t.Fatalf("expected get bucket policy status, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasLifecycle: true}, http.Header{})
-	if op != OperationGetBucketLifecycle {
-		t.Fatalf("expected get bucket lifecycle, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasLifecycle: true}, http.Header{})
-	if op != OperationPutBucketLifecycle {
-		t.Fatalf("expected put bucket lifecycle, got %s", op)
-	}
-	op = ResolveOperation(http.MethodDelete, target, DispatchQuery{HasLifecycle: true}, http.Header{})
-	if op != OperationDeleteBucketLifecycle {
-		t.Fatalf("expected delete bucket lifecycle, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasACL: true}, http.Header{})
-	if op != OperationGetBucketACL {
-		t.Fatalf("expected get bucket acl, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasACL: true}, http.Header{})
-	if op != OperationPutBucketACL {
-		t.Fatalf("expected put bucket acl, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasListType: true, ListType: "1"}, http.Header{})
-	if op != OperationListObjects {
-		t.Fatalf("expected list objects dispatch for explicit list-type key, got %s", op)
+
+	tests := []struct {
+		name     string
+		method   string
+		target   RequestTarget
+		query    DispatchQuery
+		headers  http.Header
+		expected Operation
+	}{
+		// --- bucket-level operations (target.Key == "") ---
+		{"bucket-level list-objects with list-type=2", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{ListType: "2"}, http.Header{}, OperationListObjects},
+		{"bucket-level get versioning", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasVersioning: true}, http.Header{}, OperationGetBucketVersioning},
+		{"bucket-level put versioning", http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasVersioning: true}, http.Header{}, OperationPutBucketVersioning},
+		{"bucket-level get policy", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasPolicy: true}, http.Header{}, OperationGetBucketPolicy},
+		{"bucket-level put policy", http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasPolicy: true}, http.Header{}, OperationPutBucketPolicy},
+		{"bucket-level delete policy", http.MethodDelete, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasPolicy: true}, http.Header{}, OperationDeleteBucketPolicy},
+		{"bucket-level get policy status", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasPolicyStatus: true}, http.Header{}, OperationGetBucketPolicyStatus},
+		{"bucket-level get lifecycle", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasLifecycle: true}, http.Header{}, OperationGetBucketLifecycle},
+		{"bucket-level put lifecycle", http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasLifecycle: true}, http.Header{}, OperationPutBucketLifecycle},
+		{"bucket-level delete lifecycle", http.MethodDelete, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasLifecycle: true}, http.Header{}, OperationDeleteBucketLifecycle},
+		{"bucket-level get acl", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasACL: true}, http.Header{}, OperationGetBucketACL},
+		{"bucket-level put acl", http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasACL: true}, http.Header{}, OperationPutBucketACL},
+		{"bucket-level list-objects with explicit list-type key", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasListType: true, ListType: "1"}, http.Header{}, OperationListObjects},
+		{"bucket-level create (no query)", http.MethodPut, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{}, OperationCreateBucket},
+		{"bucket-level delete (no query)", http.MethodDelete, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{}, OperationDeleteBucket},
+		{"bucket-level head", http.MethodHead, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{}, http.Header{}, OperationHeadBucket},
+		{"bucket-level list multipart uploads", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasUploads: true}, http.Header{}, OperationListMultipartUploads},
+		{"bucket-level list object versions", http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasVersions: true}, http.Header{}, OperationListObjectVersions},
+
+		// --- object-level operations (target.Key != "") ---
+		{"object-level get acl", http.MethodGet, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasACL: true}, http.Header{}, OperationGetObjectACL},
+		{"object-level put acl", http.MethodPut, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasACL: true}, http.Header{}, OperationPutObjectACL},
+		{"object-level copy via header", http.MethodPut, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{}, func() http.Header { h := http.Header{}; h.Set("X-Amz-Copy-Source", "/src/key"); return h }(), OperationCopyObject},
+		{"object-level copy via query", http.MethodPut, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasCopySource: true}, http.Header{}, OperationCopyObject},
+		{"object-level create multipart upload", http.MethodPost, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasUploads: true}, http.Header{}, OperationCreateMultipartUpload},
+		{"object-level upload part", http.MethodPut, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasUploadID: true, HasPartNumber: true, UploadID: "u1", PartNumber: "1"}, http.Header{}, OperationUploadPart},
+		{"object-level complete multipart", http.MethodPost, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasUploadID: true, UploadID: "u1"}, http.Header{}, OperationCompleteMultipartUpload},
+		{"object-level abort multipart", http.MethodDelete, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasUploadID: true, UploadID: "u1"}, http.Header{}, OperationAbortMultipartUpload},
+		{"object-level list parts", http.MethodGet, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasUploadID: true, UploadID: "u1"}, http.Header{}, OperationListParts},
+		{"object-level put malformed part (no uploadId)", http.MethodPut, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{HasPartNumber: true, PartNumber: "1"}, http.Header{}, OperationUnknown},
+		{"object-level head", http.MethodHead, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{}, http.Header{}, OperationHeadObject},
+		{"object-level get (default)", http.MethodGet, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{}, http.Header{}, OperationGetObject},
+		{"object-level delete (default)", http.MethodDelete, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{}, http.Header{}, OperationDeleteObject},
+		{"object-level put (default)", http.MethodPut, RequestTarget{Bucket: "bucket", Key: "k"}, DispatchQuery{}, http.Header{}, OperationPutObject},
+
+		// --- root-level operations ---
+		{"root-level list buckets", http.MethodGet, RequestTarget{}, DispatchQuery{}, http.Header{}, OperationListBuckets},
 	}
 
-	target = RequestTarget{Bucket: "bucket", Key: "k"}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasACL: true}, http.Header{})
-	if op != OperationGetObjectACL {
-		t.Fatalf("expected get object acl, got %s", op)
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			op := ResolveOperation(tc.method, tc.target, tc.query, tc.headers)
+			if op != tc.expected {
+				t.Fatalf("expected %s, got %s", tc.expected, op)
+			}
+		})
 	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasACL: true}, http.Header{})
-	if op != OperationPutObjectACL {
-		t.Fatalf("expected put object acl, got %s", op)
-	}
-	h := make(http.Header)
-	h.Set("X-Amz-Copy-Source", "/src/key")
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{}, h)
-	if op != OperationCopyObject {
-		t.Fatalf("expected copy object, got %s", op)
-	}
+}
 
-	op = ResolveOperation(http.MethodPost, target, DispatchQuery{HasUploads: true}, http.Header{})
-	if op != OperationCreateMultipartUpload {
-		t.Fatalf("expected create multipart upload, got %s", op)
+func TestParseRequestTargetPathStyleEmptyBucket(t *testing.T) {
+	t.Parallel()
+	r := httptest.NewRequest(http.MethodGet, "http://storage.local/", nil)
+	target, err := ParseRequestTarget(r, "storage.local")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasUploadID: true, HasPartNumber: true, UploadID: "u1", PartNumber: "1"}, http.Header{})
-	if op != OperationUploadPart {
-		t.Fatalf("expected upload part, got %s", op)
+	if target.Bucket != "" {
+		t.Fatalf("expected empty bucket for root path, got %q", target.Bucket)
 	}
-	op = ResolveOperation(http.MethodPost, target, DispatchQuery{HasUploadID: true, UploadID: "u1"}, http.Header{})
-	if op != OperationCompleteMultipartUpload {
-		t.Fatalf("expected complete multipart upload, got %s", op)
+	if target.Key != "" {
+		t.Fatalf("expected empty key for root path, got %q", target.Key)
 	}
-	op = ResolveOperation(http.MethodDelete, target, DispatchQuery{HasUploadID: true, UploadID: "u1"}, http.Header{})
-	if op != OperationAbortMultipartUpload {
-		t.Fatalf("expected abort multipart upload, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, RequestTarget{Bucket: "bucket", Key: ""}, DispatchQuery{HasUploads: true}, http.Header{})
-	if op != OperationListMultipartUploads {
-		t.Fatalf("expected list multipart uploads, got %s", op)
-	}
-	op = ResolveOperation(http.MethodGet, target, DispatchQuery{HasUploadID: true, UploadID: "u1"}, http.Header{})
-	if op != OperationListParts {
-		t.Fatalf("expected list parts, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasPartNumber: true, PartNumber: "1"}, http.Header{})
-	if op != OperationUnknown {
-		t.Fatalf("expected unknown for malformed upload part request, got %s", op)
-	}
-	op = ResolveOperation(http.MethodPut, target, DispatchQuery{HasCopySource: true}, http.Header{})
-	if op != OperationCopyObject {
-		t.Fatalf("expected copy object for query copy source presence, got %s", op)
+	if target.Style != AddressingPathStyle {
+		t.Fatalf("expected path style for root path, got %s", target.Style)
 	}
 }
 
